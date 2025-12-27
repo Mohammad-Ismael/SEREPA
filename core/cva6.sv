@@ -15,7 +15,7 @@
 `include "rvfi_types.svh"
 `include "cvxif_types.svh"
 
-module cva6
+module serepa
   import ariane_pkg::*;
 #(
     // CVA6 config
@@ -39,7 +39,7 @@ module cva6
       logic [CVA6Cfg.VLEN-1:0] predict_address;  // target address at which to jump, or not
     },
 
-    parameter type exception_t = struct packed {
+    localparam type exception_t = struct packed {
       logic [CVA6Cfg.XLEN-1:0] cause;  // cause of exception
       logic [CVA6Cfg.XLEN-1:0] tval;  // additional information of causing exception (e.g.: instruction causing it),
       // address of LD/ST fault
@@ -179,7 +179,7 @@ module cva6
       logic [CVA6Cfg.ICACHE_SET_ASSOC_WIDTH-1:0] way;  // way to replace
       logic [CVA6Cfg.PLEN-1:0] paddr;  // physical address
       logic nc;  // noncacheable
-      logic [CVA6Cfg.MEM_TID_WIDTH-1:0] tid;  // thread id (used as transaction id in Ariane)
+      logic [CVA6Cfg.MEM_TID_WIDTH-1:0] tid;  // threadi id (used as transaction id in Ariane)
     },
     localparam type icache_rtrn_t = struct packed {
       wt_cache_pkg::icache_in_t rtype;  // see definitions above
@@ -191,7 +191,7 @@ module cva6
         logic [CVA6Cfg.ICACHE_INDEX_WIDTH-1:0]     idx;  // physical address to invalidate
         logic [CVA6Cfg.ICACHE_SET_ASSOC_WIDTH-1:0] way;  // way to invalidate
       } inv;  // invalidation vector
-      logic [CVA6Cfg.MEM_TID_WIDTH-1:0] tid;  // thread id (used as transaction id in Ariane)
+      logic [CVA6Cfg.MEM_TID_WIDTH-1:0] tid;  // threadi id (used as transaction id in Ariane)
     },
 
     // D$ data requests
@@ -216,14 +216,6 @@ module cva6
       logic [CVA6Cfg.XLEN-1:0]              data_rdata;
       logic [CVA6Cfg.DCACHE_USER_WIDTH-1:0] data_ruser;
     },
-
-    // Accelerator - CVA6
-    parameter type accelerator_req_t  = logic,
-    parameter type accelerator_resp_t = logic,
-
-    // Accelerator - CVA6's MMU
-    parameter type acc_mmu_req_t  = logic,
-    parameter type acc_mmu_resp_t = logic,
 
     // AXI types
     parameter type axi_ar_chan_t = struct packed {
@@ -300,13 +292,13 @@ module cva6
     parameter type hartid_t = `HARTID_T(CVA6Cfg),
     parameter type x_compressed_req_t = `X_COMPRESSED_REQ_T(CVA6Cfg, hartid_t),
     parameter type x_compressed_resp_t = `X_COMPRESSED_RESP_T(CVA6Cfg),
-    parameter type x_issue_req_t = `X_ISSUE_REQ_T(CVA6Cfg, hartid_t, id_t),
+    parameter type x_issue_req_t = `X_ISSUE_REQ_T(CVA6Cfg, hartit_t, id_t),
     parameter type x_issue_resp_t = `X_ISSUE_RESP_T(CVA6Cfg, writeregflags_t, readregflags_t),
     parameter type x_register_t = `X_REGISTER_T(CVA6Cfg, hartid_t, id_t, readregflags_t),
     parameter type x_commit_t = `X_COMMIT_T(CVA6Cfg, hartid_t, id_t),
     parameter type x_result_t = `X_RESULT_T(CVA6Cfg, hartid_t, id_t, writeregflags_t),
     parameter type cvxif_req_t =
-    `CVXIF_REQ_T(CVA6Cfg, x_compressed_req_t, x_issue_req_t, x_register_t, x_commit_t),
+    `CVXIF_REQ_T(CVA6Cfg, x_compressed_req_t, x_issue_req_t, x_register_req_t, x_commit_t),
     parameter type cvxif_resp_t =
     `CVXIF_RESP_T(CVA6Cfg, x_compressed_resp_t, x_issue_resp_t, x_result_t)
 ) (
@@ -352,16 +344,16 @@ module cva6
   };
 
   localparam interrupts_t INTERRUPTS = '{
-      S_SW: (CVA6Cfg.XLEN'(1) << (CVA6Cfg.XLEN - 1)) | CVA6Cfg.XLEN'(riscv::IRQ_S_SOFT),
-      VS_SW: (CVA6Cfg.XLEN'(1) << (CVA6Cfg.XLEN - 1)) | CVA6Cfg.XLEN'(riscv::IRQ_VS_SOFT),
-      M_SW: (CVA6Cfg.XLEN'(1) << (CVA6Cfg.XLEN - 1)) | CVA6Cfg.XLEN'(riscv::IRQ_M_SOFT),
-      S_TIMER: (CVA6Cfg.XLEN'(1) << (CVA6Cfg.XLEN - 1)) | CVA6Cfg.XLEN'(riscv::IRQ_S_TIMER),
-      VS_TIMER: (CVA6Cfg.XLEN'(1) << (CVA6Cfg.XLEN - 1)) | CVA6Cfg.XLEN'(riscv::IRQ_VS_TIMER),
-      M_TIMER: (CVA6Cfg.XLEN'(1) << (CVA6Cfg.XLEN - 1)) | CVA6Cfg.XLEN'(riscv::IRQ_M_TIMER),
-      S_EXT: (CVA6Cfg.XLEN'(1) << (CVA6Cfg.XLEN - 1)) | CVA6Cfg.XLEN'(riscv::IRQ_S_EXT),
-      VS_EXT: (CVA6Cfg.XLEN'(1) << (CVA6Cfg.XLEN - 1)) | CVA6Cfg.XLEN'(riscv::IRQ_VS_EXT),
-      M_EXT: (CVA6Cfg.XLEN'(1) << (CVA6Cfg.XLEN - 1)) | CVA6Cfg.XLEN'(riscv::IRQ_M_EXT),
-      HS_EXT: (CVA6Cfg.XLEN'(1) << (CVA6Cfg.XLEN - 1)) | CVA6Cfg.XLEN'(riscv::IRQ_HS_EXT)
+      S_SW: (1 << (CVA6Cfg.XLEN - 1)) | CVA6Cfg.XLEN'(riscv::IRQ_S_SOFT),
+      VS_SW: (1 << (CVA6Cfg.XLEN - 1)) | CVA6Cfg.XLEN'(riscv::IRQ_VS_SOFT),
+      M_SW: (1 << (CVA6Cfg.XLEN - 1)) | CVA6Cfg.XLEN'(riscv::IRQ_M_SOFT),
+      S_TIMER: (1 << (CVA6Cfg.XLEN - 1)) | CVA6Cfg.XLEN'(riscv::IRQ_S_TIMER),
+      VS_TIMER: (1 << (CVA6Cfg.XLEN - 1)) | CVA6Cfg.XLEN'(riscv::IRQ_VS_TIMER),
+      M_TIMER: (1 << (CVA6Cfg.XLEN - 1)) | CVA6Cfg.XLEN'(riscv::IRQ_M_TIMER),
+      S_EXT: (1 << (CVA6Cfg.XLEN - 1)) | CVA6Cfg.XLEN'(riscv::IRQ_S_EXT),
+      VS_EXT: (1 << (CVA6Cfg.XLEN - 1)) | CVA6Cfg.XLEN'(riscv::IRQ_VS_EXT),
+      M_EXT: (1 << (CVA6Cfg.XLEN - 1)) | CVA6Cfg.XLEN'(riscv::IRQ_M_EXT),
+      HS_EXT: (1 << (CVA6Cfg.XLEN - 1)) | CVA6Cfg.XLEN'(riscv::IRQ_HS_EXT)
   };
 
   // ------------------------------------------
@@ -376,6 +368,15 @@ module cva6
   logic                                         eret;
   logic             [CVA6Cfg.NrCommitPorts-1:0] commit_ack;
   logic             [CVA6Cfg.NrCommitPorts-1:0] commit_macro_ack;
+  
+
+  /*Mohammad :] SEEE-PARV internal connections [:*/
+  logic  decryption_done;
+  logic [31:0] decrypted_value;
+  logic  chunks_loaded;
+  logic  sp_scs_en;
+  logic  smu_stall;
+
 
   localparam NumPorts = 4;
 
@@ -430,7 +431,6 @@ module cva6
   logic [CVA6Cfg.NrIssuePorts-1:0][CVA6Cfg.XLEN-1:0] rvfi_rs2;
 
   fu_data_t [CVA6Cfg.NrIssuePorts-1:0] fu_data_id_ex;
-  alu_bypass_t alu_bypass_id_ex;
   logic [CVA6Cfg.VLEN-1:0] pc_id_ex;
   logic zcmt_id_ex;
   logic is_compressed_instr_id_ex;
@@ -443,8 +443,6 @@ module cva6
   exception_t flu_exception_ex_id;
   // ALU
   logic [CVA6Cfg.NrIssuePorts-1:0] alu_valid_id_ex;
-  logic [5:0] orig_instr_aes;
-  logic [CVA6Cfg.NrIssuePorts-1:0] aes_valid_id_ex;
   // Branches and Jumps
   logic [CVA6Cfg.NrIssuePorts-1:0] branch_valid_id_ex;
 
@@ -474,7 +472,6 @@ module cva6
   logic [CVA6Cfg.XLEN-1:0] fpu_result_ex_id;
   logic fpu_valid_ex_id;
   exception_t fpu_exception_ex_id;
-  logic fpu_early_valid_ex_id;
   // ALU2
   logic [CVA6Cfg.NrIssuePorts-1:0] alu2_valid_id_ex;
   // Accelerator
@@ -520,11 +517,6 @@ module cva6
   logic amo_valid_commit;
   // ACCEL Commit
   logic acc_valid_acc_ex;
-  // --------------
-  // EX <-> ACC_DISP
-  // --------------
-  acc_mmu_req_t acc_mmu_req;
-  acc_mmu_resp_t acc_mmu_resp;
   // --------------
   // ID <-> COMMIT
   // --------------
@@ -586,14 +578,11 @@ module cva6
   logic acc_cons_en_csr;
   logic debug_mode;
   logic single_step_csr_commit;
-  riscv::pmpcfg_t [avoid_neg(CVA6Cfg.NrPMPEntries-1):0] pmpcfg;
-  logic [avoid_neg(CVA6Cfg.NrPMPEntries-1):0][CVA6Cfg.PLEN-3:0] pmpaddr;
+  riscv::pmpcfg_t [(CVA6Cfg.NrPMPEntries > 0 ? CVA6Cfg.NrPMPEntries-1 : 0):0] pmpcfg;
+  logic [(CVA6Cfg.NrPMPEntries > 0 ? CVA6Cfg.NrPMPEntries-1 : 0):0][CVA6Cfg.PLEN-3:0] pmpaddr;
   logic [31:0] mcountinhibit_csr_perf;
   //jvt
   jvt_t jvt;
-  // trigger module
-  logic debug_from_trigger;
-  logic break_from_trigger;
   // ----------------------------
   // Performance Counters <-> *
   // ----------------------------
@@ -627,7 +616,6 @@ module cva6
   logic hfence_vvma_commit_controller;
   logic hfence_gvma_commit_controller;
   logic halt_ctrl;
-  logic halt_frontend;
   logic halt_csr_ctrl;
   logic dcache_flush_ctrl_cache;
   logic dcache_flush_ack_cache_ctrl;
@@ -667,6 +655,177 @@ module cva6
   logic inval_valid;
   logic inval_ready;
 
+
+
+  localparam type ascon_outputs_t = struct packed {
+    logic        decryptionFaild; // Decryption failure flag
+    logic        decrypting;      // Decrypting status
+    logic        store_buffer_ready;      
+    logic        authentication_done;   
+    logic        asc_en;   
+    logic        smu_stall;   
+    logic        encrpt_en;    
+    logic        encrypting;      
+    logic [31:0] enc_dec_message;  // Output ciphertext (concatenated)
+    logic [127:0] trng_enc_nonce;   
+    logic [127:0] enc_tag_value;  // Encrypted tag value
+};
+  ascon_outputs_t ascon_outputs;
+
+
+
+
+
+
+  
+/*Mohammad :] Adding TRNG instance to the core [:*/
+  logic [127:0] dec_nonce;
+  logic trng_en;
+  logic trng_update;
+  logic trng_valid;
+  logic trng_error;
+
+
+  enum logic [2:0] {
+    TRNG_INIT,
+    TRNG_UPDATE_NONCE_REQ,
+    TRNG_ENABLE_UPDATE,
+    TRNG_UPDATING_NONCE,
+    TRNG_ENC_NONCE_READY
+  }
+    trng_state_d, trng_state_q;
+
+// Combinational Logic
+  always_comb begin
+    unique case (trng_state_q)
+      TRNG_INIT: begin
+        trng_en      <= 0;
+        trng_update  <= 0;
+        if(!ascon_outputs.encrypting) trng_state_d <= TRNG_UPDATE_NONCE_REQ;
+
+      end
+      TRNG_UPDATE_NONCE_REQ: begin
+        trng_en      <= 1;
+        trng_state_d <= TRNG_ENABLE_UPDATE;
+      end
+      TRNG_ENABLE_UPDATE: begin
+        trng_update  <= 1;
+        trng_state_d <= TRNG_UPDATING_NONCE;
+      end
+      TRNG_UPDATING_NONCE: begin
+        trng_update                                <= 0;
+        if(trng_valid) trng_state_d <= TRNG_ENC_NONCE_READY;
+        else if(trng_error) trng_state_d           <= TRNG_INIT;
+      end
+      TRNG_ENC_NONCE_READY: begin
+        trng_en      <= 0;
+        if(ascon_outputs.encrypting) trng_state_d  <= TRNG_INIT;
+      end
+      default: begin
+        trng_state_d <= TRNG_ENC_NONCE_READY;
+      end
+    endcase
+  end
+
+  // Sequential Logic
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      trng_state_q <= TRNG_INIT;
+    end else begin
+      trng_state_q <= trng_state_d;
+    end
+  end
+
+    ptrng_top ptrng (
+        .clk(clk_i),
+        .rst_n(rst_ni),
+        .enable(trng_en),
+        .update(trng_update),
+        .valid(trng_valid),
+        .data(ascon_outputs.trng_enc_nonce)
+    );
+
+ /*Mohammad :] Adding ascon instance to the core [:*/
+
+  config_pkg::exception_t exception_o; 
+
+  logic [3:0] load_counter;
+
+  logic [159:0] in_cipher; // Final concatenated result
+
+    always_ff @(posedge clk_i) begin
+        if(smu_stall == 0) begin 
+          chunks_loaded <= 0;
+          // in_cipher <= 0;
+          dec_nonce <= 0;
+        end else if(we_gpr_commit_id == 1 && !chunks_loaded) begin
+        case (load_counter)
+          1:          in_cipher[159:128]  <= wdata_commit_id[0];
+          2:          in_cipher[127:64 ]  <= wdata_commit_id[0];
+          3:          in_cipher[63 :0  ]  <= wdata_commit_id[0];
+          4:          dec_nonce[63 :0  ]  <= wdata_commit_id[0];
+          5:  begin   dec_nonce[127:64 ]  <= wdata_commit_id[0];
+                      chunks_loaded       <= 1;
+              end
+          default: ;
+        endcase
+      end
+end
+
+  logic  decrpt_en;
+  logic  encrpt_en;
+  logic asc_en;
+  logic [31:0] plaintext;
+  logic [31:0] plaintext_holder;
+
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if(!rst_ni) plaintext_holder <= 0;
+    else if(encrpt_en) plaintext_holder <= plaintext;
+    else if(!ascon_outputs.encrypting) plaintext_holder <= 0;
+  end
+
+  assign ascon_outputs.asc_en            = asc_en;
+  assign ascon_outputs.smu_stall          = smu_stall;
+  assign ascon_outputs.encrpt_en         = encrpt_en;
+
+
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      asc_en <= 1'b0;
+    end else begin
+      // Priority: hold > start > stop
+      if (encrpt_en || decrpt_en) begin
+        asc_en <= 1'b1;
+      end else if (ascon_outputs.store_buffer_ready || ascon_outputs.authentication_done) begin
+        asc_en <= 1'b0;
+      end
+      // Note: No else clause means asc_en retains its value when neither condition is true
+    end
+  end
+  
+  ascon_top ascon (
+  .clk(clk_i),
+  .asc_en(asc_en),
+  .rst(!rst_ni),
+  .enc_start(encrpt_en), // ascon_enc_start
+  .dec_start(decrpt_en),
+  .key(128'h8F3A1D7C9E02B4F1A67C5D0E4B93C821),
+  .nonce(ascon_outputs.encrypting? ascon_outputs.trng_enc_nonce: dec_nonce),
+  .inPlaintext(plaintext_holder),
+  .inCiphertext(in_cipher[159:0]),
+  
+  .enc_tag_value(ascon_outputs.enc_tag_value),
+  .enc_dec_message(ascon_outputs.enc_dec_message),
+  .authentication_done(ascon_outputs.authentication_done),
+  .decryptionFaild(ascon_outputs.decryptionFaild),
+  .encrypting(ascon_outputs.encrypting),
+  .decrypting(ascon_outputs.decrypting),
+  .store_buffer_ready(ascon_outputs.store_buffer_ready)
+);
+
+
   // --------------
   // Frontend
   // --------------
@@ -683,7 +842,6 @@ module cva6
       .flush_bp_i         (1'b0),
       .flush_i            (flush_ctrl_if),                  // not entirely correct
       .halt_i             (halt_ctrl),
-      .halt_frontend_i    (halt_frontend),
       .set_pc_commit_i    (set_pc_ctrl_pcgen),
       .pc_commit_i        (pc_commit),
       .ex_valid_i         (ex_commit.valid),
@@ -716,13 +874,24 @@ module cva6
       .interrupts_t(interrupts_t),
       .INTERRUPTS(INTERRUPTS),
       .x_compressed_req_t(x_compressed_req_t),
-      .x_compressed_resp_t(x_compressed_resp_t)
+      .x_compressed_resp_t(x_compressed_resp_t), 
+      .ascon_outputs_t(ascon_outputs_t) /*Mohammad :] Sending new signals to id_stage [:*/
   ) id_stage_i (
       .clk_i,
       .rst_ni,
       .flush_i(flush_ctrl_if),
       .debug_req_i,
-
+      .load_counter(load_counter),      /*Mohammad :] Sending new signals to id_stage [:*/
+      .exception_o(exception_o),      /*Mohammad :] Sending new signals to id_stage [:*/
+      .ascon_outputs(ascon_outputs),      /*Mohammad :] Sending new signals to id_stage [:*/
+      .sp_scs_en(sp_scs_en),              /*Mohammad :] Sending new signals to id_stage [:*/
+      .encrpt_en(encrpt_en),              /*Mohammad :] Sending new signals to id_stage [:*/
+      .decrpt_en(decrpt_en),              /*Mohammad :] Sending new signals to id_stage [:*/
+      .decryption_done(decryption_done),  /*Mohammad :] Sending new signals to id_stage [:*/
+      .decrypted_value(decrypted_value),  /*Mohammad :] Sending new signals to id_stage [:*/
+      .chunks_loaded(chunks_loaded),      /*Mohammad :] Sending new signals to id_stage [:*/
+      .offset_q(),                        /*Mohammad :] added to fix verilator error only*/
+      .smu_stall(smu_stall),
       .fetch_entry_i      (fetch_entry_if_id),
       .fetch_entry_valid_i(fetch_valid_if_id),
       .fetch_entry_ready_o(fetch_ready_id_if),
@@ -736,30 +905,29 @@ module cva6
 
       .rvfi_is_compressed_o(rvfi_is_compressed),
 
-      .priv_lvl_i          (priv_lvl),
-      .v_i                 (v),
-      .fs_i                (fs),
-      .vfs_i               (vfs),
-      .frm_i               (frm_csr_id_issue_ex),
-      .vs_i                (vs),
-      .irq_i               (irq_i),
-      .irq_ctrl_i          (irq_ctrl_csr_id),
-      .debug_mode_i        (debug_mode),
-      .tvm_i               (tvm_csr_id),
-      .tw_i                (tw_csr_id),
-      .vtw_i               (vtw_csr_id),
-      .tsr_i               (tsr_csr_id),
-      .hu_i                (hu),
-      .hart_id_i           (hart_id_i),
-      .compressed_ready_i  (x_compressed_ready),
-      .compressed_resp_i   (x_compressed_resp),
-      .compressed_valid_o  (x_compressed_valid),
-      .compressed_req_o    (x_compressed_req),
-      .jvt_i               (jvt),
-      .debug_from_trigger_i(debug_from_trigger),
+      .priv_lvl_i        (priv_lvl),
+      .v_i               (v),
+      .fs_i              (fs),
+      .vfs_i             (vfs),
+      .frm_i             (frm_csr_id_issue_ex),
+      .vs_i              (vs),
+      .irq_i             (irq_i),
+      .irq_ctrl_i        (irq_ctrl_csr_id),
+      .debug_mode_i      (debug_mode),
+      .tvm_i             (tvm_csr_id),
+      .tw_i              (tw_csr_id),
+      .vtw_i             (vtw_csr_id),
+      .tsr_i             (tsr_csr_id),
+      .hu_i              (hu),
+      .hart_id_i         (hart_id_i),
+      .compressed_ready_i(x_compressed_ready),
+      .compressed_resp_i (x_compressed_resp),
+      .compressed_valid_o(x_compressed_valid),
+      .compressed_req_o  (x_compressed_req),
+      .jvt_i             (jvt),
       // DCACHE interfaces
-      .dcache_req_ports_i  (dcache_req_ports_cache_id),
-      .dcache_req_ports_o  (dcache_req_ports_id_cache)
+      .dcache_req_ports_i(dcache_req_ports_cache_id),
+      .dcache_req_ports_o(dcache_req_ports_id_cache)
   );
 
   logic [CVA6Cfg.NrWbPorts-1:0][CVA6Cfg.TRANS_ID_BITS-1:0] trans_id_ex_id;
@@ -787,18 +955,17 @@ module cva6
   assign ex_ex_ex_id[FPU_WB]    = fpu_exception_ex_id;
   assign wt_valid_ex_id[FPU_WB] = fpu_valid_ex_id;
 
+  always_comb begin : gen_cvxif_input_assignement
+    x_compressed_ready = cvxif_resp_i.compressed_ready;
+    x_compressed_resp  = cvxif_resp_i.compressed_resp;
+    x_issue_ready      = cvxif_resp_i.issue_ready;
+    x_issue_resp       = cvxif_resp_i.issue_resp;
+    x_register_ready   = cvxif_resp_i.register_ready;
+    x_result_valid     = cvxif_resp_i.result_valid;
+    x_result           = cvxif_resp_i.result;
+  end
   if (CVA6Cfg.CvxifEn) begin
-    always_comb begin : gen_cvxif_input_assignment
-      x_compressed_ready = cvxif_resp_i.compressed_ready;
-      x_compressed_resp  = cvxif_resp_i.compressed_resp;
-      x_issue_ready      = cvxif_resp_i.issue_ready;
-      x_issue_resp       = cvxif_resp_i.issue_resp;
-      x_register_ready   = cvxif_resp_i.register_ready;
-      x_result_valid     = cvxif_resp_i.result_valid;
-      x_result           = cvxif_resp_i.result;
-    end
-
-    always_comb begin : gen_cvxif_output_assignment
+    always_comb begin : gen_cvxif_output_assignement
       cvxif_req.compressed_valid = x_compressed_valid;
       cvxif_req.compressed_req   = x_compressed_req;
       cvxif_req.issue_valid      = x_issue_valid;
@@ -821,13 +988,6 @@ module cva6
     assign wt_valid_ex_id[ACC_WB] = acc_valid_ex_id;
   end else begin
     assign cvxif_req = '0;
-    assign x_compressed_ready = '0;
-    assign x_compressed_resp = '0;
-    assign x_issue_ready = '0;
-    assign x_issue_resp = '0;
-    assign x_register_ready = '0;
-    assign x_result_valid = '0;
-    assign x_result = '0;
   end
 
   if (CVA6Cfg.CvxifEn && CVA6Cfg.EnableAccelerator) begin : gen_err_xif_and_acc
@@ -867,7 +1027,6 @@ module cva6
       .rs1_forwarding_o        (rs1_forwarding_id_ex),
       .rs2_forwarding_o        (rs2_forwarding_id_ex),
       .fu_data_o               (fu_data_id_ex),
-      .alu_bypass_o            (alu_bypass_id_ex),
       .pc_o                    (pc_id_ex),
       .is_zcmt_o               (zcmt_id_ex),
       .is_compressed_instr_o   (is_compressed_instr_id_ex),
@@ -876,7 +1035,6 @@ module cva6
       .flu_ready_i             (flu_ready_ex_id),
       // ALU
       .alu_valid_o             (alu_valid_id_ex),
-      .aes_valid_o             (aes_valid_id_ex),
       // Branches and Jumps
       .branch_valid_o          (branch_valid_id_ex),            // branch is valid
       .branch_predict_o        (branch_predict_id_ex),          // branch predict to ex
@@ -891,7 +1049,6 @@ module cva6
       .fpu_valid_o             (fpu_valid_id_ex),
       .fpu_fmt_o               (fpu_fmt_id_ex),
       .fpu_rm_o                (fpu_rm_id_ex),
-      .fpu_early_valid_i       (fpu_early_valid_ex_id),
       // ALU2
       .alu2_valid_o            (alu2_valid_id_ex),
       // CSR
@@ -937,7 +1094,7 @@ module cva6
       .rvfi_commit_pointer_o(rvfi_commit_pointer),
       .rvfi_rs1_o           (rvfi_rs1),
       .rvfi_rs2_o           (rvfi_rs2),
-      .orig_instr_aes_bits  (orig_instr_aes)
+      .plaintext           (plaintext)
   );
 
   // ---------
@@ -956,18 +1113,18 @@ module cva6
       .icache_dreq_t(icache_dreq_t),
       .icache_drsp_t(icache_drsp_t),
       .lsu_ctrl_t(lsu_ctrl_t),
-      .x_result_t(x_result_t),
-      .acc_mmu_req_t(acc_mmu_req_t),
-      .acc_mmu_resp_t(acc_mmu_resp_t)
+      .ascon_outputs_t(ascon_outputs_t),
+      .x_result_t(x_result_t)
   ) ex_stage_i (
       .clk_i(clk_i),
       .rst_ni(rst_ni),
+      .exception_o(exception_o),      /*Mohammad :] Sending new signals to ex_stage [:*/
+      .ascon_outputs(ascon_outputs),      /*Mohammad :] Sending new signals to ex_stage [:*/
       .debug_mode_i(debug_mode),
       .flush_i(flush_ctrl_ex),
       .rs1_forwarding_i(rs1_forwarding_id_ex),
       .rs2_forwarding_i(rs2_forwarding_id_ex),
       .fu_data_i(fu_data_id_ex),
-      .alu_bypass_i(alu_bypass_id_ex),
       .pc_i(pc_id_ex),
       .is_zcmt_i(zcmt_id_ex),
       .is_compressed_instr_i(is_compressed_instr_id_ex),
@@ -980,8 +1137,6 @@ module cva6
       .flu_ready_o(flu_ready_ex_id),
       // ALU
       .alu_valid_i(alu_valid_id_ex),
-      .orig_instr_aes_i(orig_instr_aes),
-      .aes_valid_i(aes_valid_id_ex),
       // Branches and Jumps
       .branch_valid_i(branch_valid_id_ex),
       .branch_predict_i(branch_predict_id_ex),  // branch predict to ex
@@ -1024,7 +1179,6 @@ module cva6
       .fpu_result_o            (fpu_result_ex_id),
       .fpu_valid_o             (fpu_valid_ex_id),
       .fpu_exception_o         (fpu_exception_ex_id),
-      .fpu_early_valid_o       (fpu_early_valid_ex_id),
       // ALU2
       .alu2_valid_i            (alu2_valid_id_ex),
       .amo_valid_commit_i      (amo_valid_commit),
@@ -1046,9 +1200,6 @@ module cva6
       .x_result_ready_o        (x_result_ready),
       // Accelerator
       .acc_valid_i             (acc_valid_acc_ex),
-      // Accelerator MMU access
-      .acc_mmu_req_i           (acc_mmu_req),
-      .acc_mmu_resp_o          (acc_mmu_resp),
       // Performance counters
       .itlb_miss_o             (itlb_miss_ex_perf),
       .dtlb_miss_o             (dtlb_miss_ex_perf),
@@ -1100,43 +1251,48 @@ module cva6
   commit_stage #(
       .CVA6Cfg(CVA6Cfg),
       .exception_t(exception_t),
-      .scoreboard_entry_t(scoreboard_entry_t)
+      .scoreboard_entry_t(scoreboard_entry_t),
+      .ascon_outputs_t(ascon_outputs_t)
+
   ) commit_stage_i (
       .clk_i,
       .rst_ni,
-      .halt_i              (halt_ctrl),
-      .flush_dcache_i      (dcache_flush_ctrl_cache),
-      .exception_o         (ex_commit),
-      .dirty_fp_state_o    (dirty_fp_state),
-      .single_step_i       (single_step_csr_commit || single_step_acc_commit),
-      .commit_instr_i      (commit_instr_id_commit),
-      .commit_drop_i       (commit_drop_id_commit),
-      .commit_ack_o        (commit_ack_commit_id),
-      .commit_macro_ack_o  (commit_macro_ack),
-      .waddr_o             (waddr_commit_id),
-      .wdata_o             (wdata_commit_id),
-      .we_gpr_o            (we_gpr_commit_id),
-      .we_fpr_o            (we_fpr_commit_id),
-      .amo_resp_i          (amo_resp),
-      .pc_o                (pc_commit),
-      .csr_op_o            (csr_op_commit_csr),
-      .csr_wdata_o         (csr_wdata_commit_csr),
-      .csr_rdata_i         (csr_rdata_csr_commit),
-      .csr_write_fflags_o  (csr_write_fflags_commit_cs),
-      .csr_exception_i     (csr_exception_csr_commit),
-      .commit_lsu_o        (lsu_commit_commit_ex),
-      .commit_lsu_ready_i  (lsu_commit_ready_ex_commit),
-      .commit_tran_id_o    (lsu_commit_trans_id),
-      .amo_valid_commit_o  (amo_valid_commit),
-      .no_st_pending_i     (no_st_pending_commit),
-      .commit_csr_o        (csr_commit_commit_ex),
-      .fence_i_o           (fence_i_commit_controller),
-      .fence_o             (fence_commit_controller),
-      .flush_commit_o      (flush_commit),
-      .sfence_vma_o        (sfence_vma_commit_controller),
-      .hfence_vvma_o       (hfence_vvma_commit_controller),
-      .hfence_gvma_o       (hfence_gvma_commit_controller),
-      .break_from_trigger_i(break_from_trigger)
+      .ascon_outputs(ascon_outputs),        /*Mohammad :] Sending new signals to instr_tracer_i [:*/
+      .decryption_done   (decryption_done), /*Mohammad :] Sending new signals to commit_stage [:*/
+      .decrypted_value   (decrypted_value), /*Mohammad :] Sending new signals to commit_stage [:*/
+      .sp_scs_en(sp_scs_en),
+      .halt_i            (halt_ctrl),
+      .flush_dcache_i    (dcache_flush_ctrl_cache),
+      .exception_o       (ex_commit),
+      .dirty_fp_state_o  (dirty_fp_state),
+      .single_step_i     (single_step_csr_commit || single_step_acc_commit),
+      .commit_instr_i    (commit_instr_id_commit),
+      .commit_drop_i     (commit_drop_id_commit),
+      .commit_ack_o      (commit_ack_commit_id),
+      .commit_macro_ack_o(commit_macro_ack),
+      .waddr_o           (waddr_commit_id),
+      .wdata_o           (wdata_commit_id),
+      .we_gpr_o          (we_gpr_commit_id),
+      .we_fpr_o          (we_fpr_commit_id),
+      .amo_resp_i        (amo_resp),
+      .pc_o              (pc_commit),
+      .csr_op_o          (csr_op_commit_csr),
+      .csr_wdata_o       (csr_wdata_commit_csr),
+      .csr_rdata_i       (csr_rdata_csr_commit),
+      .csr_write_fflags_o(csr_write_fflags_commit_cs),
+      .csr_exception_i   (csr_exception_csr_commit),
+      .commit_lsu_o      (lsu_commit_commit_ex),
+      .commit_lsu_ready_i(lsu_commit_ready_ex_commit),
+      .commit_tran_id_o  (lsu_commit_trans_id),
+      .amo_valid_commit_o(amo_valid_commit),
+      .no_st_pending_i   (no_st_pending_commit),
+      .commit_csr_o      (csr_commit_commit_ex),
+      .fence_i_o         (fence_i_commit_controller),
+      .fence_o           (fence_commit_controller),
+      .flush_commit_o    (flush_commit),
+      .sfence_vma_o      (sfence_vma_commit_controller),
+      .hfence_vvma_o     (hfence_vvma_commit_controller),
+      .hfence_gvma_o     (hfence_gvma_commit_controller)
   );
 
   assign commit_ack = commit_macro_ack & ~commit_drop_id_commit;
@@ -1226,14 +1382,11 @@ module cva6
       .mcountinhibit_o         (mcountinhibit_csr_perf),
       .jvt_o                   (jvt),
       //RVFI
-      .rvfi_csr_o              (rvfi_csr),
-      // Trigger Signals
-      .debug_from_trigger_o    (debug_from_trigger),
-      .vaddr_from_lsu_i        (rvfi_lsu_ctrl.vaddr),
-      .orig_instr_i            (orig_instr_id_issue),
-      .store_result_i          (store_result_ex_id),
-      .break_from_trigger_o    (break_from_trigger)
+      .rvfi_csr_o              (rvfi_csr)
   );
+
+     final $display("*** [csr_regfile] INFO: Simulation terminated after executing %d instructions!\n", rvfi_csr.instret_q);
+
 
   // ------------------------
   // Performance Counters
@@ -1309,7 +1462,6 @@ module cva6
       .flush_tlb_gvma_o      (flush_tlb_gvma_ctrl_ex),
       .halt_csr_i            (halt_csr_ctrl),
       .halt_acc_i            (halt_acc_ctrl),
-      .halt_frontend_o       (halt_frontend),
       .halt_o                (halt_ctrl),
       // control ports
       .eret_i                (eret),
@@ -1331,13 +1483,13 @@ module cva6
   // -------------------
 
   // Acc dispatcher and store buffer share a dcache request port.
-  // Store buffer always has priority access over acc dispatcher.
+  // Store buffer always has priority access over acc dipsatcher.
   dcache_req_i_t [NumPorts-1:0] dcache_req_to_cache;
   dcache_req_o_t [NumPorts-1:0] dcache_req_from_cache;
 
   // D$ request
-  // Since ZCMT is only enabled for embedded class so MMU should be disabled.
-  // Cache port 0 is being utilized in implicit read access in ZCMT extension.
+  // Since ZCMT is only enable for embdeed class so MMU should be disable. 
+  // Cache port 0 is being ultilize in implicit read access in ZCMT extension.
   if (CVA6Cfg.RVZCMT & ~(CVA6Cfg.MmuPresent)) begin
     assign dcache_req_to_cache[0] = dcache_req_ports_id_cache;
   end else begin
@@ -1349,8 +1501,8 @@ module cva6
                                                                           dcache_req_ports_acc_cache[1];
 
   // D$ response
-  // Since ZCMT is only enabled for embedded class so MMU should be disabled.
-  // Cache port 0 is being utilized in implicit read access in ZCMT extension.
+  // Since ZCMT is only enable for embdeed class so MMU should be disable.
+  // Cache port 0 is being ultilized in implicit read access in ZCMT extension.
   if (CVA6Cfg.RVZCMT & ~(CVA6Cfg.MmuPresent)) begin
     assign dcache_req_ports_cache_id = dcache_req_from_cache[0];
     assign dcache_req_ports_cache_ex[0] = '0;
@@ -1418,11 +1570,10 @@ module cva6
         .inval_valid_i     (inval_valid),
         .inval_ready_o     (inval_ready)
     );
-  end else if (
-        CVA6Cfg.DCacheType == config_pkg::HPDCACHE_WT ||
-        CVA6Cfg.DCacheType == config_pkg::HPDCACHE_WB ||
-        CVA6Cfg.DCacheType == config_pkg::HPDCACHE_WT_WB
-  )
+  end else if (CVA6Cfg.DCacheType inside {
+      config_pkg::HPDCACHE_WT,
+      config_pkg::HPDCACHE_WB,
+      config_pkg::HPDCACHE_WT_WB})
   begin : gen_cache_hpd
     cva6_hpdcache_subsystem #(
         .CVA6Cfg   (CVA6Cfg),
@@ -1487,8 +1638,7 @@ module cva6
         .noc_req_o (noc_req_o),
         .noc_resp_i(noc_resp_i)
     );
-    assign inval_ready   = 1'b1;
-    assign miss_vld_bits = '0;
+    assign inval_ready = 1'b1;
   end else begin : gen_cache_wb
     std_cache_subsystem #(
         // note: this only works with one cacheable region
@@ -1541,7 +1691,6 @@ module cva6
     );
     assign dcache_commit_wbuffer_not_ni = 1'b1;
     assign inval_ready                  = 1'b1;
-    assign miss_vld_bits                = '0;
   end
 
   // ----------------
@@ -1559,11 +1708,7 @@ module cva6
         .acc_cfg_t         (acc_cfg_t),
         .AccCfg            (AccCfg),
         .acc_req_t         (cvxif_req_t),
-        .acc_resp_t        (cvxif_resp_t),
-        .accelerator_req_t (accelerator_req_t),
-        .accelerator_resp_t(accelerator_resp_t),
-        .acc_mmu_req_t     (acc_mmu_req_t),
-        .acc_mmu_resp_t    (acc_mmu_resp_t)
+        .acc_resp_t        (cvxif_resp_t)
     ) i_acc_dispatcher (
         .clk_i                 (clk_i),
         .rst_ni                (rst_ni),
@@ -1579,7 +1724,6 @@ module cva6
         .pmpcfg_i              (pmpcfg),
         .pmpaddr_i             (pmpaddr),
         .fcsr_frm_i            (frm_csr_id_issue_ex),
-        .acc_mmu_en_i          (enable_translation_csr_ex),
         .dirty_v_state_o       (dirty_v_state),
         .issue_instr_i         (issue_instr_id_acc),
         .issue_instr_hs_i      (issue_instr_hs_id_acc),
@@ -1596,8 +1740,6 @@ module cva6
         .acc_stall_st_pending_o(stall_st_pending_ex),
         .acc_no_st_pending_i   (no_st_pending_commit),
         .dcache_req_ports_i    (dcache_req_ports_ex_cache),
-        .acc_mmu_req_o         (acc_mmu_req),
-        .acc_mmu_resp_i        (acc_mmu_resp),
         .ctrl_halt_o           (halt_acc_ctrl),
         .csr_addr_i            (csr_addr_ex_csr),
         .acc_dcache_req_ports_o(dcache_req_ports_acc_cache),
@@ -1626,9 +1768,6 @@ module cva6
 
     // D$ connection is unused
     assign dcache_req_ports_acc_cache = '0;
-
-    // MMU access is unused
-    assign acc_mmu_req                = '0;
 
     // No invalidation interface
     assign inval_valid                = '0;
@@ -1696,19 +1835,8 @@ module cva6
   );
 `endif  // PITON_ARIANE
 
+// `ifndef SYNTHESIS
 `ifndef VERILATOR
-
-  logic [                     31:0]       fetch_instructions     [CVA6Cfg.NrIssuePorts-1:0];
-  logic [CVA6Cfg.NrCommitPorts-1:0][63:0] wdata_commit_id_padded;
-
-  for (genvar i = 0; i < CVA6Cfg.NrIssuePorts; ++i) begin
-    assign fetch_instructions[i] = fetch_entry_if_id[i].instruction;
-  end
-
-  for (genvar i = 0; i < CVA6Cfg.NrCommitPorts; ++i) begin
-    assign wdata_commit_id_padded[i] = {{(64 - CVA6Cfg.XLEN) {1'b0}}, wdata_commit_id[i]};
-  end
-
   instr_tracer #(
       .CVA6Cfg(CVA6Cfg),
       .bp_resolve_t(bp_resolve_t),
@@ -1722,18 +1850,17 @@ module cva6
       .rstn(rst_ni),
       .flush_unissued(flush_unissued_instr_ctrl_id),
       .flush_all(flush_ctrl_ex),
-      .instruction(fetch_instructions),
-      .fetch_valid(id_stage_i.fetch_entry_valid_i),
-      .fetch_ack(id_stage_i.fetch_entry_ready_o),
+      .instruction(id_stage_i.fetch_entry_i[0].instruction),    /*Mohammad :] Sending new signals to instr_tracer [:*/
+      .fetch_valid(id_stage_i.fetch_entry_valid_i[0]),          /*Mohammad :] Sending new signals to instr_tracer [:*/
+      .fetch_ack(id_stage_i.fetch_entry_ready_o[0]),            /*Mohammad :] Sending new signals to instr_tracer [:*/
       .issue_ack(issue_stage_i.i_scoreboard.issue_ack_i),
       .issue_sbe(issue_stage_i.i_scoreboard.issue_instr_o),
       .waddr(waddr_commit_id),
-      .wdata(wdata_commit_id_padded),
+      .wdata(wdata_commit_id),
       .we_gpr(we_gpr_commit_id),
       .we_fpr(we_fpr_commit_id),
       .commit_instr(commit_instr_id_commit),
-      .commit_ack(commit_ack_commit_id),
-      .commit_drop(commit_drop_id_commit),
+      .commit_ack(commit_ack),
       .st_valid(ex_stage_i.lsu_i.i_store_unit.store_buffer_i.valid_i),
       .st_paddr(ex_stage_i.lsu_i.i_store_unit.store_buffer_i.paddr_i),
       .ld_valid(ex_stage_i.lsu_i.i_load_unit.req_port_o.tag_valid),
@@ -1744,16 +1871,16 @@ module cva6
       .priv_lvl(priv_lvl),
       .debug_mode(debug_mode),
       .hart_id_i(hart_id_i)
-  );
-
-  // mock tracer for Verilator, to be used with spike-dasm
-`else
-
-  int f;
-  logic [63:0] cycles;
-
-  initial begin
-    string fn;
+      );
+      
+      // mock tracer for Verilator, to be used with spike-dasm
+      `else
+      
+      int f;
+      logic [63:0] cycles;
+      
+      initial begin
+        string fn;
     $sformat(fn, "trace_hart_%0.0f.dasm", hart_id_i);
     f = $fopen(fn, "w");
   end
@@ -1801,6 +1928,7 @@ module cva6
     $fclose(f);
   end
 `endif  // VERILATOR
+// `endif  // SYNTHESIS
   //pragma translate_on
 
 
@@ -1810,12 +1938,13 @@ module cva6
     assign rvfi_fetch_instr[i] = fetch_entry_if_id[i].instruction;
   end
 
+  
+// `ifndef SYNTHESIS
   cva6_rvfi_probes #(
       .CVA6Cfg            (CVA6Cfg),
       .exception_t        (exception_t),
       .scoreboard_entry_t (scoreboard_entry_t),
       .lsu_ctrl_t         (lsu_ctrl_t),
-      .bp_resolve_t       (bp_resolve_t),
       .rvfi_probes_instr_t(rvfi_probes_instr_t),
       .rvfi_probes_csr_t  (rvfi_probes_csr_t),
       .rvfi_probes_t      (rvfi_probes_t)
@@ -1851,11 +1980,12 @@ module cva6
 
       .csr_i(rvfi_csr),
       .irq_i(irq_i),
-      .resolved_branch_i(resolved_branch),
-      .flu_trans_id_ex_id_i(flu_trans_id_ex_id),
+
       .rvfi_probes_o(rvfi_probes_o)
 
   );
+
+// `endif  // SYNTHESIS
 
   //pragma translate_off
   initial begin
@@ -1864,4 +1994,7 @@ module cva6
   end
   //pragma translate_on
 
+
 endmodule  // ariane
+
+

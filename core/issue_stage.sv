@@ -50,7 +50,7 @@ module issue_stage
     input logic [CVA6Cfg.NrIssuePorts-1:0] decoded_instr_valid_i,
     // Is instruction a control flow instruction - ID_STAGE
     input logic [CVA6Cfg.NrIssuePorts-1:0] is_ctrl_flow_i,
-    // Handshake's acknowledge with decode stage - ID_STAGE
+    // Handshake's acknowlege with decode stage - ID_STAGE
     output logic [CVA6Cfg.NrIssuePorts-1:0] decoded_instr_ack_o,
     // rs1 forwarding - EX_STAGE
     output [CVA6Cfg.NrIssuePorts-1:0][CVA6Cfg.VLEN-1:0] rs1_forwarding_o,
@@ -58,8 +58,6 @@ module issue_stage
     output [CVA6Cfg.NrIssuePorts-1:0][CVA6Cfg.VLEN-1:0] rs2_forwarding_o,
     // FU data useful to execute instruction - EX_STAGE
     output fu_data_t [CVA6Cfg.NrIssuePorts-1:0] fu_data_o,
-    // ALU to ALU bypass control - EX_STAGE
-    output alu_bypass_t alu_bypass_o,
     // Program Counter - EX_STAGE
     output logic [CVA6Cfg.VLEN-1:0] pc_o,
     // Is zcmt instruction - EX_STAGE
@@ -72,8 +70,6 @@ module issue_stage
     input logic flu_ready_i,
     // ALU output is valid - EX_STAGE
     output logic [CVA6Cfg.NrIssuePorts-1:0] alu_valid_o,
-    // AES output is valid - EX_STAGE
-    output logic [CVA6Cfg.NrIssuePorts-1:0] aes_valid_o,
     // Branch unit is valid - EX_STAGE
     output logic [CVA6Cfg.NrIssuePorts-1:0] branch_valid_o,
     // Information of branch prediction - EX_STAGE
@@ -94,8 +90,6 @@ module issue_stage
     output logic [1:0] fpu_fmt_o,
     // FPU rm field - EX_STAGE
     output logic [2:0] fpu_rm_o,
-    // FPU early valid - EX_STAGE
-    input logic fpu_early_valid_i,
     // ALU2 FU is valid - EX_STAGE
     output logic [CVA6Cfg.NrIssuePorts-1:0] alu2_valid_o,
     // CSR is valid - EX_STAGE
@@ -170,8 +164,9 @@ module issue_stage
     output logic [CVA6Cfg.NrIssuePorts-1:0][CVA6Cfg.XLEN-1:0] rvfi_rs1_o,
     // Information dedicated to RVFI - RVFI
     output logic [CVA6Cfg.NrIssuePorts-1:0][CVA6Cfg.XLEN-1:0] rvfi_rs2_o,
-    // Original instruction bits for AES
-    output logic [5:0] orig_instr_aes_bits
+
+        /*Mohammad :] SEEE-PARV Ports [:*/
+    output logic [31:0] plaintext
 );
   // ---------------------------------------------------
   // Scoreboard (SB) <-> Issue and Read Operands (IRO)
@@ -266,7 +261,6 @@ module issue_stage
       .issue_ack_o             (issue_ack_iro_sb),
       .fwd_i                   (fwd),
       .fu_data_o               (fu_data_o),
-      .alu_bypass_o            (alu_bypass_o),
       .rs1_forwarding_o        (rs1_forwarding_o),
       .rs2_forwarding_o        (rs2_forwarding_o),
       .pc_o,
@@ -274,7 +268,6 @@ module issue_stage
       .is_compressed_instr_o,
       .flu_ready_i             (flu_ready_i),
       .alu_valid_o             (alu_valid_o),
-      .aes_valid_o             (aes_valid_o),
       .branch_valid_o          (branch_valid_o),
       .tinst_o                 (tinst_o),
       .branch_predict_o,
@@ -285,7 +278,6 @@ module issue_stage
       .fpu_valid_o,
       .fpu_fmt_o,
       .fpu_rm_o,
-      .fpu_early_valid_i,
       .alu2_valid_o,
       .csr_valid_o,
       .cvxif_valid_o           (xfu_valid_o),
@@ -312,7 +304,8 @@ module issue_stage
       .stall_issue_o,
       .rvfi_rs1_o              (rvfi_rs1_o),
       .rvfi_rs2_o              (rvfi_rs2_o),
-      .orig_instr_aes_bits     (orig_instr_aes_bits)
+      .plaintext              (plaintext)
+      
   );
 
 endmodule

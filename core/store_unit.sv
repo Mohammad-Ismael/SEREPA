@@ -16,6 +16,7 @@
 module store_unit
   import ariane_pkg::*;
 #(
+   parameter type ascon_outputs_t = logic,
     parameter config_pkg::cva6_cfg_t CVA6Cfg = config_pkg::cva6_cfg_empty,
     parameter type dcache_req_i_t = logic,
     parameter type dcache_req_o_t = logic,
@@ -83,7 +84,12 @@ module store_unit
     // Data cache request - CACHES
     input dcache_req_o_t req_port_i,
     // Data cache response - CACHES
-    output dcache_req_i_t req_port_o
+    output dcache_req_i_t req_port_o,
+
+        /*Mohammad :] SEEE-PARV Ports [:*/
+    input ascon_outputs_t ascon_outputs,
+    input config_pkg::exception_t exception_o,
+    input logic [CVA6Cfg.NrIssuePorts-1:0][CVA6Cfg.VLEN-1:0] scs_base_address
 );
 
   // align data to address e.g.: shift data to be naturally 64
@@ -288,12 +294,16 @@ module store_unit
   // Store Queue
   // ---------------
   store_buffer #(
+    .ascon_outputs_t(ascon_outputs_t),
       .CVA6Cfg(CVA6Cfg),
       .dcache_req_i_t(dcache_req_i_t),
       .dcache_req_o_t(dcache_req_o_t)
   ) store_buffer_i (
       .clk_i,
       .rst_ni,
+      .exception_o(exception_o),
+      .ascon_outputs(ascon_outputs),
+      .scs_base_address(scs_base_address),
       .flush_i,
       .stall_st_pending_i,
       .no_st_pending_o,
@@ -306,7 +316,7 @@ module store_unit
       .valid_i              (store_buffer_valid),
       // the flush signal can be critical and we need this valid
       // signal to check whether the page_offset matches or not,
-      // functionally it doesn't make a difference whether we use
+      // functionaly it doesn't make a difference whether we use
       // the correct valid signal or not as we are flushing
       // the whole pipeline anyway
       .valid_without_flush_i(st_valid_without_flush),

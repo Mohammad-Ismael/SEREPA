@@ -35,12 +35,6 @@ package config_pkg;
     HPDCACHE_WT_WB = 4
   } cache_type_t;
 
-  /// Branch predictor parameter
-  typedef enum logic {
-    BHT = 0,  // Bimodal predictor
-    PH_BHT = 1  // Private History Bimodal predictor
-  } bp_type_t;
-
   /// Data and Address length
   typedef enum logic [3:0] {
     ModeOff  = 0,
@@ -51,11 +45,11 @@ package config_pkg;
     ModeSv64 = 11
   } vm_mode_t;
 
-  /// Coprocessor type parameter
-  typedef enum {
-    COPRO_NONE,
-    COPRO_EXAMPLE
-  } copro_type_t;
+  // Define a struct for exceptions
+  typedef struct packed {
+    logic normal_store_secure_variable;
+    logic decryption_failure_exception;
+  } exception_t;
 
   localparam NrMaxRules = 16;
 
@@ -68,7 +62,7 @@ package config_pkg;
     bit                          RVA;
     // Bit manipulation RISC-V extension
     bit                          RVB;
-    // Scalar Cryptography RISC-V extension
+    // Scalar Cryptography RISC-V entension
     bit                          ZKN;
     // Vector RISC-V extension
     bit                          RVV;
@@ -118,12 +112,6 @@ package config_pkg;
     logic [63:0]                 HaltAddress;
     // Address to jump when exception
     logic [63:0]                 ExceptionAddress;
-    // Trigger Module Sdtrig Extension
-    bit                          SDTRIG;
-    bit                          Mcontrol6;
-    bit                          Icount;
-    bit                          Etrigger;
-    bit                          Itrigger;
     // Tval Support Enable
     bit                          TvalEn;
     // MTVEC CSR supports only direct mode
@@ -158,8 +146,6 @@ package config_pkg;
     logic [NrMaxRules-1:0][63:0] CachedRegionLength;
     // CV-X-IF coprocessor interface enable
     bit                          CvxifEn;
-    // Coprocessor type
-    copro_type_t                 CoproType;
     // NOC bus type
     noc_type_e                   NOCType;
     // AXI address width
@@ -206,12 +192,10 @@ package config_pkg;
     bit                          FpgaEn;
     // Is FPGA optimization for Altera FPGA
     bit                          FpgaAlteraEn;
-    // Is Techno Cut instantiated
+    // Is Techno Cut instanciated
     bit                          TechnoCut;
     // Enable superscalar* with 2 issue ports and 2 commit ports.
     bit                          SuperscalarEn;
-    // Enable ALU-ALU bypass (superscalar mode only)
-    bit                          ALUBypass;
     // Number of commit ports. Forced to 2 if SuperscalarEn.
     int unsigned                 NrCommitPorts;
     // Load cycle latency number
@@ -228,12 +212,8 @@ package config_pkg;
     int unsigned                 RASDepth;
     // Branch target buffer entries
     int unsigned                 BTBEntries;
-    // Branch predictor type
-    bp_type_t                    BPType;
     // Branch history entries
     int unsigned                 BHTEntries;
-    // Branch history bits
-    int unsigned                 BHTHist;
     // MMU instruction TLB entries
     int unsigned                 InstrTlbEntries;
     // MMU data TLB entries
@@ -242,8 +222,6 @@ package config_pkg;
     bit unsigned                 UseSharedTlb;
     // MMU depth of shared TLB
     int unsigned                 SharedTlbDepth;
-    // Option to enable Svnapot extension
-    bit                          SvnapotEn;
   } cva6_user_cfg_t;
 
   typedef struct packed {
@@ -265,9 +243,6 @@ package config_pkg;
     int unsigned NrCommitPorts;
     int unsigned NrIssuePorts;
     bit          SpeculativeSb;
-
-    int unsigned NrALUs;
-    bit          ALUBypass;
 
     int unsigned NrLoadPipeRegs;
     int unsigned NrStorePipeRegs;
@@ -294,7 +269,6 @@ package config_pkg;
     bit          RVZCMT;
     bit          XFVec;
     bit          CvxifEn;
-    copro_type_t CoproType;
     bit          RVZiCond;
     bit          RVZicntr;
     bit          RVZihpm;
@@ -322,13 +296,10 @@ package config_pkg;
     logic [63:0] ExceptionAddress;
     int unsigned RASDepth;
     int unsigned BTBEntries;
-    bp_type_t    BPType;
     int unsigned BHTEntries;
-    int unsigned BHTHist;
     int unsigned InstrTlbEntries;
     int unsigned DataTlbEntries;
     bit unsigned UseSharedTlb;
-    bit SvnapotEn;
     int unsigned SharedTlbDepth;
     int unsigned VpnLen;
     int unsigned PtLevels;
@@ -353,11 +324,6 @@ package config_pkg;
     logic [NrMaxRules-1:0][63:0] CachedRegionLength;
     int unsigned                 MaxOutstandingStores;
     bit                          DebugEn;
-    bit                          SDTRIG;
-    bit                          Mcontrol6;
-    bit                          Icount;
-    bit                          Etrigger;
-    bit                          Itrigger;
     bit                          NonIdemPotenceEn;       // Currently only used by V extension (Ara)
     bit                          AxiBurstWriteEn;
 
@@ -431,6 +397,7 @@ package config_pkg;
     assert (Cfg.NrExecuteRegionRules <= NrMaxRules);
     assert (Cfg.NrCachedRegionRules <= NrMaxRules);
     assert (Cfg.NrPMPEntries <= 64);
+    assert (!(Cfg.SuperscalarEn && Cfg.RVF));
     assert (Cfg.FETCH_WIDTH == 32 || Cfg.FETCH_WIDTH == 64)
     else $fatal(1, "[frontend] fetch width != not supported");
     // Support for disabling MIP.MSIP and MIE.MSIE in Hypervisor and Supervisor mode is not supported

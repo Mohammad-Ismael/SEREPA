@@ -21,9 +21,9 @@ package build_config_pkg;
     bit EnableAccelerator = CVA6Cfg.RVV;  // Currently only used by V extension (Ara)
     int unsigned NrWbPorts = (CVA6Cfg.CvxifEn || EnableAccelerator) ? 5 : 4;
 
-    int unsigned ICACHE_INDEX_WIDTH = $clog2(CVA6Cfg.IcacheByteSize / CVA6Cfg.IcacheSetAssoc);
-    int unsigned DCACHE_INDEX_WIDTH = $clog2(CVA6Cfg.DcacheByteSize / CVA6Cfg.DcacheSetAssoc);
-    int unsigned DCACHE_OFFSET_WIDTH = $clog2(CVA6Cfg.DcacheLineWidth / 8);
+    int unsigned ICACHE_INDEX_WIDTH = $clog2(16384 / 4);
+    int unsigned DCACHE_INDEX_WIDTH = $clog2(32768 / 8);
+    int unsigned DCACHE_OFFSET_WIDTH = $clog2(128 / 8);
 
     // MMU
     int unsigned VpnLen = (CVA6Cfg.XLEN == 64) ? (CVA6Cfg.RVH ? 29 : 27) : 20;
@@ -37,7 +37,7 @@ package build_config_pkg;
     cfg.GPLEN = (CVA6Cfg.XLEN == 32) ? 34 : 41;
     cfg.IS_XLEN32 = IS_XLEN32;
     cfg.IS_XLEN64 = IS_XLEN64;
-    cfg.XLEN_ALIGN_BYTES = $clog2(CVA6Cfg.XLEN / 8);
+    cfg.XLEN_ALIGN_BYTES = $clog2(64 / 8);
     cfg.ASID_WIDTH = (CVA6Cfg.XLEN == 64) ? 16 : 1;
     cfg.VMID_WIDTH = (CVA6Cfg.XLEN == 64) ? 14 : 1;
 
@@ -49,9 +49,6 @@ package build_config_pkg;
     cfg.NrCommitPorts = CVA6Cfg.SuperscalarEn ? unsigned'(2) : CVA6Cfg.NrCommitPorts;
     cfg.NrIssuePorts = unsigned'(CVA6Cfg.SuperscalarEn ? 2 : 1);
     cfg.SpeculativeSb = CVA6Cfg.SuperscalarEn;
-
-    cfg.NrALUs = CVA6Cfg.SuperscalarEn ? unsigned'(2) : unsigned'(1);
-    cfg.ALUBypass = CVA6Cfg.SuperscalarEn ? bit'(CVA6Cfg.ALUBypass) : bit'(0);
 
     cfg.NrLoadPipeRegs = CVA6Cfg.NrLoadPipeRegs;
     cfg.NrStorePipeRegs = CVA6Cfg.NrStorePipeRegs;
@@ -77,12 +74,11 @@ package build_config_pkg;
     cfg.RVZCMP = CVA6Cfg.RVZCMP;
     cfg.XFVec = CVA6Cfg.XFVec;
     cfg.CvxifEn = CVA6Cfg.CvxifEn;
-    cfg.CoproType = CVA6Cfg.CoproType;
     cfg.RVZiCond = CVA6Cfg.RVZiCond;
     cfg.RVZicntr = CVA6Cfg.RVZicntr;
     cfg.RVZihpm = CVA6Cfg.RVZihpm;
     cfg.NR_SB_ENTRIES = CVA6Cfg.NrScoreboardEntries;
-    cfg.TRANS_ID_BITS = $clog2(CVA6Cfg.NrScoreboardEntries);
+    cfg.TRANS_ID_BITS = $clog2(8);
 
     cfg.FpPresent = bit'(FpPresent);
     cfg.NSX = bit'(NSX);
@@ -106,9 +102,7 @@ package build_config_pkg;
     cfg.ExceptionAddress = CVA6Cfg.ExceptionAddress;
     cfg.RASDepth = CVA6Cfg.RASDepth;
     cfg.BTBEntries = CVA6Cfg.BTBEntries;
-    cfg.BPType = CVA6Cfg.BPType;
     cfg.BHTEntries = CVA6Cfg.BHTEntries;
-    cfg.BHTHist = CVA6Cfg.BHTHist;
     cfg.DmBaseAddress = CVA6Cfg.DmBaseAddress;
     cfg.TvalEn = CVA6Cfg.TvalEn;
     cfg.DirectVecOnly = CVA6Cfg.DirectVecOnly;
@@ -129,16 +123,11 @@ package build_config_pkg;
     cfg.CachedRegionLength = CVA6Cfg.CachedRegionLength;
     cfg.MaxOutstandingStores = CVA6Cfg.MaxOutstandingStores;
     cfg.DebugEn = CVA6Cfg.DebugEn;
-    cfg.SDTRIG = CVA6Cfg.SDTRIG;
-    cfg.Mcontrol6 = CVA6Cfg.Mcontrol6;
-    cfg.Icount = CVA6Cfg.Icount;
-    cfg.Etrigger = CVA6Cfg.Etrigger;
-    cfg.Itrigger = CVA6Cfg.Itrigger;
     cfg.NonIdemPotenceEn = (CVA6Cfg.NrNonIdempotentRules > 0) && (CVA6Cfg.NonIdempotentLength > 0);
     cfg.AxiBurstWriteEn = CVA6Cfg.AxiBurstWriteEn;
 
     cfg.ICACHE_SET_ASSOC = CVA6Cfg.IcacheSetAssoc;
-    cfg.ICACHE_SET_ASSOC_WIDTH = CVA6Cfg.IcacheSetAssoc > 1 ? $clog2(CVA6Cfg.IcacheSetAssoc) :
+    cfg.ICACHE_SET_ASSOC_WIDTH = CVA6Cfg.IcacheSetAssoc > 1 ? $clog2(4) :
         CVA6Cfg.IcacheSetAssoc;
     cfg.ICACHE_INDEX_WIDTH = ICACHE_INDEX_WIDTH;
     cfg.ICACHE_TAG_WIDTH = cfg.PLEN - ICACHE_INDEX_WIDTH;
@@ -147,7 +136,7 @@ package build_config_pkg;
     cfg.DCacheType = CVA6Cfg.DCacheType;
     cfg.DcacheIdWidth = CVA6Cfg.DcacheIdWidth;
     cfg.DCACHE_SET_ASSOC = CVA6Cfg.DcacheSetAssoc;
-    cfg.DCACHE_SET_ASSOC_WIDTH = CVA6Cfg.DcacheSetAssoc > 1 ? $clog2(CVA6Cfg.DcacheSetAssoc) :
+    cfg.DCACHE_SET_ASSOC_WIDTH = CVA6Cfg.DcacheSetAssoc > 1 ? $clog2(8) :
         CVA6Cfg.DcacheSetAssoc;
     cfg.DCACHE_INDEX_WIDTH = DCACHE_INDEX_WIDTH;
     cfg.DCACHE_TAG_WIDTH = cfg.PLEN - DCACHE_INDEX_WIDTH;
@@ -169,9 +158,9 @@ package build_config_pkg;
     cfg.AXI_USER_EN = CVA6Cfg.DataUserEn | CVA6Cfg.FetchUserEn;
 
     cfg.FETCH_WIDTH = unsigned'(CVA6Cfg.SuperscalarEn ? 64 : 32);
-    cfg.FETCH_ALIGN_BITS = $clog2(cfg.FETCH_WIDTH / 8);
+    cfg.FETCH_ALIGN_BITS = $clog2(32 / 8);
     cfg.INSTR_PER_FETCH = cfg.FETCH_WIDTH / (CVA6Cfg.RVC ? 16 : 32);
-    cfg.LOG2_INSTR_PER_FETCH = cfg.INSTR_PER_FETCH > 1 ? $clog2(cfg.INSTR_PER_FETCH) : 1;
+    cfg.LOG2_INSTR_PER_FETCH = cfg.INSTR_PER_FETCH > 1 ? $clog2(2) : 1;
 
     cfg.ModeW = (CVA6Cfg.XLEN == 32) ? 1 : 4;
     cfg.ASIDW = (CVA6Cfg.XLEN == 32) ? 9 : 16;
@@ -184,7 +173,6 @@ package build_config_pkg;
     cfg.InstrTlbEntries = CVA6Cfg.InstrTlbEntries;
     cfg.DataTlbEntries = CVA6Cfg.DataTlbEntries;
     cfg.UseSharedTlb = CVA6Cfg.UseSharedTlb;
-    cfg.SvnapotEn = CVA6Cfg.SvnapotEn;
     cfg.SharedTlbDepth = CVA6Cfg.SharedTlbDepth;
     cfg.VpnLen = VpnLen;
     cfg.PtLevels = PtLevels;

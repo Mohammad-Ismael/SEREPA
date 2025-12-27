@@ -13,7 +13,6 @@ package cva6_config_pkg;
   localparam CVA6ConfigXlen = 32;
 
   localparam CVA6ConfigRVF = 0;
-  localparam CVA6ConfigRVD = 0;
   localparam CVA6ConfigF16En = 0;
   localparam CVA6ConfigF16AltEn = 0;
   localparam CVA6ConfigF8En = 0;
@@ -78,7 +77,6 @@ package cva6_config_pkg;
       FpgaAlteraEn: bit'(0),  // for Altera (only)
       TechnoCut: bit'(0),
       SuperscalarEn: bit'(0),
-      ALUBypass: bit'(0),
       NrCommitPorts: unsigned'(1),
       AxiAddrWidth: unsigned'(CVA6ConfigAxiAddrWidth),
       AxiDataWidth: unsigned'(CVA6ConfigAxiDataWidth),
@@ -87,7 +85,7 @@ package cva6_config_pkg;
       MemTidWidth: unsigned'(CVA6ConfigMemTidWidth),
       NrLoadBufEntries: unsigned'(CVA6ConfigNrLoadBufEntries),
       RVF: bit'(CVA6ConfigRVF),
-      RVD: bit'(CVA6ConfigRVD),
+      RVD: bit'(CVA6ConfigRVF),
       XF16: bit'(CVA6ConfigF16En),
       XF16ALT: bit'(CVA6ConfigF16AltEn),
       XF8: bit'(CVA6ConfigF8En),
@@ -102,7 +100,6 @@ package cva6_config_pkg;
       RVZCMP: bit'(CVA6ConfigZcmpExtEn),
       XFVec: bit'(CVA6ConfigFVecEn),
       CvxifEn: bit'(CVA6ConfigCvxifEn),
-      CoproType: config_pkg::COPRO_NONE,
       RVZiCond: bit'(CVA6ConfigRVZiCond),
       RVZicntr: bit'(1),
       RVZihpm: bit'(1),
@@ -116,9 +113,7 @@ package cva6_config_pkg;
       ExceptionAddress: 64'h808,
       RASDepth: unsigned'(CVA6ConfigRASDepth),
       BTBEntries: unsigned'(CVA6ConfigBTBEntries),
-      BPType: config_pkg::BHT,
       BHTEntries: unsigned'(CVA6ConfigBHTEntries),
-      BHTHist: unsigned'(3),
       DmBaseAddress: 64'h0,
       TvalEn: unsigned'(CVA6ConfigTvalEn),
       DirectVecOnly: bit'(0),
@@ -139,11 +134,6 @@ package cva6_config_pkg;
       CachedRegionLength: 1024'({64'h40000000}),
       MaxOutstandingStores: unsigned'(7),
       DebugEn: bit'(1),
-      SDTRIG: bit'(0),
-      Mcontrol6: bit'(0),
-      Icount: bit'(0),
-      Etrigger: bit'(0),
-      Itrigger: bit'(0),
       AxiBurstWriteEn: bit'(0),
       IcacheByteSize: unsigned'(CVA6ConfigIcacheByteSize),
       IcacheSetAssoc: unsigned'(CVA6ConfigIcacheSetAssoc),
@@ -161,7 +151,6 @@ package cva6_config_pkg;
       InstrTlbEntries: int'(2),
       DataTlbEntries: int'(2),
       UseSharedTlb: bit'(1),
-      SvnapotEn: bit'(0),
       SharedTlbDepth: int'(64),
       NrLoadPipeRegs: int'(CVA6ConfigNrLoadPipeRegs),
       NrStorePipeRegs: int'(CVA6ConfigNrStorePipeRegs),

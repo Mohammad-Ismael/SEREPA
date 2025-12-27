@@ -22,8 +22,6 @@ module cvxif_fu
     input  logic                                   clk_i,
     // Asynchronous reset active low - SUBSYSTEM
     input  logic                                   rst_ni,
-    // Virtualization mode state - CSR_REGFILE
-    input  logic                                   v_i,
     // CVXIF instruction is valid - ISSUE_STAGE
     input  logic                                   x_valid_i,
     // Transaction ID - ISSUE_STAGE
@@ -56,7 +54,7 @@ module cvxif_fu
 
   assign result_ready_o = 1'b1;
 
-  assign x_ready_o = 1'b1; // Readiness of cvxif_fu is determined in issue stage by CVXIF issue interface
+  assign x_ready_o = 1'b1; // Readyness of cvxif_fu is determined in issue stage by CVXIF issue interface
   // Result signals
   assign x_valid_o = x_illegal_i || result_valid_i;
   assign x_result_o = result_i.data;
@@ -70,10 +68,6 @@ module cvxif_fu
     x_exception_o.cause = x_illegal_i ? riscv::ILLEGAL_INSTR : '0;
     if (CVA6Cfg.TvalEn)
       x_exception_o.tval = x_off_instr_i;  // TODO Optimization : Set exception in IRO.
-    // Hypervisor exception fields
-    x_exception_o.tval2 = {CVA6Cfg.GPLEN{1'b0}};
-    x_exception_o.tinst = '0;
-    x_exception_o.gva   = CVA6Cfg.RVH ? v_i : 1'b0;
   end
 
 endmodule

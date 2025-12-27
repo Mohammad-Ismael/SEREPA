@@ -226,6 +226,7 @@ package riscv;
   // --------------------
   // RV32/64G listings:
   // Quadrant 0
+  localparam OpcodeLoadChunk = 7'b00_000_11;
   localparam OpcodeLoad = 7'b00_000_11;
   localparam OpcodeLoadFp = 7'b00_001_11;
   localparam OpcodeCustom0 = 7'b00_010_11;
@@ -235,6 +236,7 @@ package riscv;
   localparam OpcodeOpImm32 = 7'b00_110_11;
   // Quadrant 1
   localparam OpcodeStore = 7'b01_000_11;
+  localparam OpcodeStoreChunk = 7'b01_000_11;
   localparam OpcodeStoreFp = 7'b01_001_11;
   localparam OpcodeCustom1 = 7'b01_010_11;
   localparam OpcodeAmo = 7'b01_011_11;
@@ -323,6 +325,9 @@ package riscv;
     logic v;
   } pte_sv32_t;
 
+  // ----------------------
+  // SEEE-PARV Exception Cause Codes
+  // ----------------------
   // ----------------------
   // Exception Cause Codes
   // ----------------------
@@ -643,8 +648,6 @@ package riscv;
     CSR_TDATA2           = 12'h7A2,
     CSR_TDATA3           = 12'h7A3,
     CSR_TINFO            = 12'h7A4,
-    CSR_MCONTEXT         = 12'h7A8,
-    CSR_SCONTEXT         = 12'h5A8,
     // Debug CSR
     CSR_DCSR             = 12'h7b0,
     CSR_DPC              = 12'h7b1,

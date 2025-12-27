@@ -36,8 +36,6 @@ module frontend
     input logic flush_i,
     // Halt requested by WFI and Accelerate port - CONTROLLER
     input logic halt_i,
-    // Halt frontend - CONTROLLER (in the case of fence_i to avoid fetching an old instruction)
-    input logic halt_frontend_i,
     // Set COMMIT PC as next PC requested by FENCE, CSR side-effect and Accelerate port - CONTROLLER
     input logic set_pc_commit_i,
     // COMMIT PC - COMMIT
@@ -197,7 +195,7 @@ module frontend
   end
   ;
 
-  // for the return address stack it doesn't matter as we have the
+  // for the return address stack it doens't matter as we have the
   // address of the call/return already
   logic bp_valid;
 
@@ -308,9 +306,8 @@ module frontend
   assign is_mispredict = resolved_branch_i.valid & resolved_branch_i.is_mispredict;
 
   // Cache interface
-  // Gate ICache requests and NPC updates during fence.i
-  assign icache_dreq_o.req = instr_queue_ready & ~halt_frontend_i;
-  assign if_ready = icache_dreq_i.ready & instr_queue_ready & ~halt_frontend_i;
+  assign icache_dreq_o.req = instr_queue_ready;
+  assign if_ready = icache_dreq_i.ready & instr_queue_ready;
   // We need to flush the cache pipeline if:
   // 1. We mispredicted
   // 2. Want to flush the whole processor front-end
@@ -513,7 +510,7 @@ module frontend
 
   if (CVA6Cfg.BHTEntries == 0) begin
     assign bht_prediction = '0;
-  end else if (CVA6Cfg.BPType == config_pkg::BHT) begin : bht_gen
+  end else begin : bht_gen
     bht #(
         .CVA6Cfg   (CVA6Cfg),
         .bht_update_t(bht_update_t),
@@ -524,18 +521,6 @@ module frontend
         .flush_bp_i      (flush_bp_i),
         .debug_mode_i,
         .vpc_i           (vpc_bht),
-        .bht_update_i    (bht_update),
-        .bht_prediction_o(bht_prediction)
-    );
-  end else if (CVA6Cfg.BPType == config_pkg::PH_BHT) begin : bht2lvl_gen
-    bht2lvl #(
-        .CVA6Cfg     (CVA6Cfg),
-        .bht_update_t(bht_update_t)
-    ) i_bht (
-        .clk_i,
-        .rst_ni,
-        .flush_i         (flush_bp_i),
-        .vpc_i           (icache_vaddr_q),
         .bht_update_i    (bht_update),
         .bht_prediction_o(bht_prediction)
     );

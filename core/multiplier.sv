@@ -144,9 +144,6 @@ module multiplier
         clmulr_q <= clmulr_d;
       end
     end
-  end else begin
-    assign clmul_q  = '0;
-    assign clmulr_q = '0;
   end
   // -----------------------
   // Output pipeline register

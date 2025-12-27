@@ -107,7 +107,6 @@ module compressed_decoder #(
               riscv::OpcodeLoad
             };
           end
-
           riscv::OpcodeC0Ld: begin
             // RV64
             //   c.ld -> ld rd', imm(rs1')
@@ -227,7 +226,6 @@ module compressed_decoder #(
                     1'b0,
                     riscv::OpcodeStore
                   };
-                  if (instr_i[6] == 1'b1) illegal_instr_o = 1'b1;
                 end
 
                 default: begin
@@ -320,7 +318,7 @@ module compressed_decoder #(
               end
             end
           end
-
+          
           default: begin
             illegal_instr_o = 1'b1;
           end

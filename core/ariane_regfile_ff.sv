@@ -39,7 +39,10 @@ module ariane_regfile #(
     // write port
     input  logic [CVA6Cfg.NrCommitPorts-1:0][           4:0] waddr_i,
     input  logic [CVA6Cfg.NrCommitPorts-1:0][DATA_WIDTH-1:0] wdata_i,
-    input  logic [CVA6Cfg.NrCommitPorts-1:0]                 we_i
+    input  logic [CVA6Cfg.NrCommitPorts-1:0]                 we_i,
+
+    /*Mohammad :] SEEE-PARV Ports [:*/
+    output logic [31:0] plaintext
 );
 
   localparam ADDR_WIDTH = 5;
@@ -79,5 +82,17 @@ module ariane_regfile #(
   for (genvar i = 0; i < NR_READ_PORTS; i++) begin
     assign rdata_o[i] = mem[raddr_i[i]];
   end
+
+  /*Mohammad :] This is used to read the plain text to be secured [:*/
+  always_comb begin
+    if (!rst_ni) begin
+      plaintext = 0;
+    end else begin
+      plaintext = mem[raddr_i[1][4:0]];
+    end
+  end
+
+
+
 
 endmodule

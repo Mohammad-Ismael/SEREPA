@@ -14,6 +14,7 @@
 //              issue and read operands.
 
 module id_stage #(
+    parameter type ascon_outputs_t = logic,
     parameter config_pkg::cva6_cfg_t CVA6Cfg = config_pkg::cva6_cfg_empty,
     parameter type branchpredict_sbe_t = logic,
     parameter type dcache_req_i_t = logic,
@@ -51,7 +52,7 @@ module id_stage #(
     output logic [CVA6Cfg.NrIssuePorts-1:0] issue_entry_valid_o,
     // Report if instruction is a control flow instruction - ISSUE
     output logic [CVA6Cfg.NrIssuePorts-1:0] is_ctrl_flow_o,
-    // Handshake's acknowledge between decode and issue - ISSUE
+    // Handshake's acknowlege between decode and issue - ISSUE
     input logic [CVA6Cfg.NrIssuePorts-1:0] issue_instr_ack_i,
     // Information dedicated to RVFI - RVFI
     output logic [CVA6Cfg.NrIssuePorts-1:0] rvfi_is_compressed_o,
@@ -91,12 +92,24 @@ module id_stage #(
     input x_compressed_resp_t compressed_resp_i,
     output logic compressed_valid_o,
     output x_compressed_req_t compressed_req_o,
-    // breakpoint request from trigger module
-    input debug_from_trigger_i,
     // Data cache request ouput - CACHE
     input dcache_req_o_t dcache_req_ports_i,
     // Data cache request input - CACHE
-    output dcache_req_i_t dcache_req_ports_o
+    output dcache_req_i_t dcache_req_ports_o,
+
+    /*Mohammad :] SEEE-PARV Ports [:*/
+    input ascon_outputs_t          ascon_outputs,
+    input  logic                   chunks_loaded,
+    output logic                   sp_scs_en,
+    output logic                   decrpt_en,
+    output logic                   encrpt_en,
+    output logic                   decryption_done,
+    output logic [31:0]            decrypted_value,
+    output logic [11:0]            offset_q,
+    output logic [3:0]             load_counter,
+    output config_pkg::exception_t exception_o,  // Unified exception output as a struct
+    output logic                   smu_stall
+
 );
   // ID/ISSUE register stage
   typedef struct packed {
@@ -153,6 +166,41 @@ module id_stage #(
   logic              [CVA6Cfg.NrIssuePorts-1:0]       is_compressed_deco;
 
 
+  
+   // Mohammad: Signals for sp_controller
+  logic        is_illegal_scl;
+
+
+
+
+  logic [31:0] fake_instruction;
+  
+  assign fake_instruction = (chunks_loaded && smu_stall) || (sp_scs_en & !smu_stall)? 1: fetch_entry_i[0].instruction;
+  // Mohammad: Instantiate sp_controller
+
+    sp_controller #(
+      .ascon_outputs_t(ascon_outputs_t),
+      .CVA6Cfg(CVA6Cfg)
+    ) sp_controller_i (
+        .clk_i                (clk_i),
+        .rst_ni               (rst_ni),
+        .is_scl               (issue_n[0].sbe.op == ariane_pkg::LENC),
+        .ascon_outputs        (ascon_outputs),
+        .exception_o          (exception_o),
+        .instr_i              (instruction_rvc[0]),
+        .issue_ack_i          (issue_instr_ack_i[0]),
+        .chunks_loaded        (chunks_loaded),
+        .illegal_instr_o      (is_illegal_scl),
+        .fetch_stall_o        (smu_stall),
+        .offset_q             (offset_q),
+        .decryption_done      (decryption_done),
+        .decrypted_value      (decrypted_value),
+        .sp_scs_en            (sp_scs_en),
+        .decrpt_en            (decrpt_en),
+        .load_counter         (load_counter),
+        .encrpt_en            (encrpt_en)
+    );
+  
   if (CVA6Cfg.RVC) begin
     // ---------------------------------------------------------
     // 1. Check if they are compressed and expand in case they are
@@ -161,7 +209,7 @@ module id_stage #(
       compressed_decoder #(
           .CVA6Cfg(CVA6Cfg)
       ) compressed_decoder_i (
-          .instr_i         (fetch_entry_i[i].instruction),
+          .instr_i         (fake_instruction),          // Mohammad: this fake instruction fools the pipeline to do a nop instruction when decrypting
           .instr_o         (instruction_rvc[i]),
           .illegal_instr_o (is_illegal_rvc[i]),
           .is_compressed_o (is_compressed_rvc[i]),
@@ -238,7 +286,7 @@ module id_stage #(
       assign is_illegal_cvxif_i = is_zcmt_instr[0] ? is_illegal_zcmt : is_illegal_zcmp;
       assign is_compressed_cvxif_i = is_zcmt_instr[0] ? is_compressed_zcmt : is_compressed_zcmp;
       assign stall_macro_deco = is_zcmt_instr[0] ? stall_macro_deco_zcmt : stall_macro_deco_zcmp;
-    end else begin  // Do not instantiate the mux which is not optimized cross-boundaries
+    end else begin  // Do not instantiate the mux which is not optimized cross-bondaries
       assign instruction_cvxif_i = instruction_zcmp;
       assign is_illegal_cvxif_i = is_illegal_zcmp;
       assign is_compressed_cvxif_i = is_compressed_zcmp;
@@ -271,13 +319,6 @@ module id_stage #(
     end else begin
       assign stall_instr_fetch[0] = stall_macro_deco;
     end
-  end else begin
-    for (genvar i = 0; i < CVA6Cfg.NrIssuePorts; i++) begin
-      assign is_illegal_rvc[i] = 1'b0;
-      assign instruction_rvc[i] = fetch_entry_i[i].instruction;
-      assign is_compressed_rvc[i] = 1'b0;
-      assign stall_instr_fetch[i] = 1'b0;
-    end
   end
 
   // ---------------------------------------------------------
@@ -287,7 +328,11 @@ module id_stage #(
   always_comb begin
     // No CVXIF, No ZCMP, No ZCMT => Connect directly compressed decoder to decoder
     is_illegal_deco    = is_illegal_rvc;
-    instruction_deco   = instruction_rvc;
+
+    /*Mohammad: Here, we added conditions to the decoded instruction to manibulate the pipeline for LENC*/
+    instruction_deco   = (decryption_done && instruction_rvc[0][14:12] == 3'b111 && instruction_rvc[0][6:0] == 7'b0000011) ?
+                            {instruction_rvc[0][31:20], instruction_rvc[0][19:15], instruction_rvc[0][14:12], 5'b00000, instruction_rvc[0][6:0]}:instruction_rvc;
+ 
     is_compressed_deco = is_compressed_rvc;
     if (CVA6Cfg.CvxifEn) begin
       is_illegal_deco[0]    = is_illegal_cvxif_o;
@@ -341,8 +386,7 @@ module id_stage #(
         .hu_i,
         .instruction_o             (decoded_instruction[i]),
         .orig_instr_o              (orig_instr[i]),
-        .is_control_flow_instr_o   (is_control_flow_instr[i]),
-        .debug_from_trigger_i      (debug_from_trigger_i)
+        .is_control_flow_instr_o   (is_control_flow_instr[i])
     );
   end
 
@@ -429,7 +473,7 @@ module id_stage #(
       // Clear the valid flag if issue has acknowledged the instruction
       if (issue_instr_ack_i[0]) issue_n[0].valid = 1'b0;
 
-      // TODO: redo
+      // TODO: refaire
       // if we have a space in the register and the fetch is valid, go get it
       // or the issue stage is currently acknowledging an instruction, which means that we will have space
       // for a new instruction
@@ -445,6 +489,19 @@ module id_stage #(
 
       // invalidate the pipeline register on a flush
       if (flush_i) issue_n[0].valid = 1'b0;
+
+      /* Mohammad
+        • The ID stage uses the fetch_entry_ready_o signal to signal its readiness to accept a new instruction from the frontend.
+        • If the ID stage is not ready to process a new instruction (for example, if its internal pipelines are full or it is waiting on a dependency), it will deassert the fetch_entry_ready_o signal.
+        • When the frontend sees that fetch_entry_ready_o is low, it will stop fetching new instructions. This effectively stalls the frontend pipeline until the ID stage becomes ready again by asserting fetch_entry_ready_o [our conversation history].
+      */
+      if (smu_stall) begin
+        fetch_entry_ready_o = '0;        // Mohammad: This will stall the frontend of the processor.
+        issue_n[0].sbe.result = offset_q;// Mohammad: This will manipulate the instuction loading and storing.
+        if(issue_n[0].sbe.op == ariane_pkg::SENC) issue_n[0].sbe.fu = ariane_pkg::NONE;// Mohammad: This will make the store buffer not store the plaintext!
+      end
+
+
     end
   end
   // -------------------------

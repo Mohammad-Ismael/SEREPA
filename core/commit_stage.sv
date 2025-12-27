@@ -16,6 +16,7 @@
 module commit_stage
   import ariane_pkg::*;
 #(
+    parameter type ascon_outputs_t = logic,
     parameter config_pkg::cva6_cfg_t CVA6Cfg = config_pkg::cva6_cfg_empty,
     parameter type exception_t = logic,
     parameter type scoreboard_entry_t = logic
@@ -72,7 +73,7 @@ module commit_stage
     output logic [CVA6Cfg.TRANS_ID_BITS-1:0] commit_tran_id_o,
     // Valid AMO in commit stage - EX_STAGE
     output logic amo_valid_commit_o,
-    // No store is pending - EX_STAGE
+    // no store is pending - EX_STAGE
     input logic no_st_pending_i,
     // Commit the pending CSR instruction - EX_STAGE
     output logic commit_csr_o,
@@ -88,8 +89,13 @@ module commit_stage
     output logic hfence_vvma_o,
     // TO_BE_COMPLETED - CONTROLLER
     output logic hfence_gvma_o,
-    // Breakpoint exception from trigger module
-    input logic break_from_trigger_i
+
+    /*Mohammad :] SEEE-PARV Ports [:*/
+    input ascon_outputs_t ascon_outputs,
+    input logic sp_scs_en,
+    input logic decryption_done,
+    input logic [31:0] decrypted_value
+
 );
 
   // ila_0 i_ila_commit (
@@ -107,7 +113,8 @@ module commit_stage
   // );
 
   for (genvar i = 0; i < CVA6Cfg.NrCommitPorts; i++) begin : gen_waddr
-    assign waddr_o[i] = commit_instr_i[i].rd;
+    /*Mohammad: Here, we choose the GPR where the decrypted plain text will be stored*/
+    assign waddr_o[i] = decryption_done? commit_instr_i[i].ex.tval[11:7]: commit_instr_i[i].rd;
   end
 
   assign pc_o = commit_instr_i[0].pc;
@@ -115,12 +122,10 @@ module commit_stage
   always_comb begin : dirty_fp_state
     dirty_fp_state_o = 1'b0;
     for (int i = 0; i < CVA6Cfg.NrCommitPorts; i++) begin
-      dirty_fp_state_o |= commit_ack_o[i] & ((commit_instr_i[i].fu inside {FPU, FPU_VEC} & CVA6Cfg.FpPresent & ariane_pkg::fd_changes_rd_state(
+      dirty_fp_state_o |= commit_ack_o[i] & (commit_instr_i[i].fu inside {FPU, FPU_VEC} || (CVA6Cfg.FpPresent && ariane_pkg::is_rd_fpr(
           commit_instr_i[i].op
-      )) || (CVA6Cfg.FpPresent && ariane_pkg::is_rd_fpr(
-          commit_instr_i[i].op
-          // Check if we issued a vector floating-point instruction to the accelerator
-      ))) | (commit_instr_i[i].fu == ACCEL && commit_instr_i[i].vfp);
+          // Check if we issued a vector floating-point instruction to the accellerator
+      ))) | commit_instr_i[i].fu == ACCEL && commit_instr_i[i].vfp;
     end
   end
 
@@ -145,7 +150,15 @@ module commit_stage
     commit_lsu_o = 1'b0;
     commit_csr_o = 1'b0;
     // amos will commit on port 0
-    wdata_o[0] = (CVA6Cfg.RVA && amo_resp_i.ack) ? amo_resp_i.result[CVA6Cfg.XLEN-1:0] : commit_instr_i[0].result;
+
+    /*Mohammad: Here, when decryption is done, we pull the decrypted plain text to force assign it to the rd GPR*/
+    /*Mohammad: Here also, when starting to secure load chunk, we wil load the cipher_chucks to the rd GPR*/
+    /*Mohammad: normally, decryption_done will be zero, and the pipeline works on normal mode*/
+
+    wdata_o[0] = (CVA6Cfg.RVA && amo_resp_i.ack) ? amo_resp_i.result[CVA6Cfg.XLEN-1:0] :
+                                 (decryption_done? decrypted_value                     :
+                                       ((commit_instr_i[0].result)));
+
     csr_op_o = ADD;  // this corresponds to a CSR NOP
     csr_wdata_o = {CVA6Cfg.XLEN{1'b0}};
     fence_i_o = 1'b0;
@@ -159,7 +172,7 @@ module commit_stage
     // we do not commit the instruction yet if we requested a halt
     if (commit_instr_i[0].valid && !halt_i) begin
       // we will not commit the instruction if we took an exception
-      if (commit_instr_i[0].ex.valid || break_from_trigger_i) begin
+      if (commit_instr_i[0].ex.valid) begin
         // However we can drop it (with its exception)
         if (commit_drop_i[0]) begin
           commit_ack_o[0] = 1'b1;
@@ -405,11 +418,6 @@ module commit_stage
     // - If we halted the processor
     if (halt_i) begin
       exception_o.valid = 1'b0;
-    end
-
-    if (CVA6Cfg.SDTRIG && !CVA6Cfg.DebugEn && break_from_trigger_i) begin
-      exception_o.valid = 1'b1;
-      exception_o.cause = 32'h00000003;
     end
   end
 endmodule

@@ -17,6 +17,7 @@
 module ex_stage
   import ariane_pkg::*;
 #(
+    parameter type ascon_outputs_t = logic,
     parameter config_pkg::cva6_cfg_t CVA6Cfg = config_pkg::cva6_cfg_empty,
     parameter type bp_resolve_t = logic,
     parameter type branchpredict_sbe_t = logic,
@@ -29,9 +30,7 @@ module ex_stage
     parameter type icache_dreq_t = logic,
     parameter type icache_drsp_t = logic,
     parameter type lsu_ctrl_t = logic,
-    parameter type x_result_t = logic,
-    parameter type acc_mmu_req_t = logic,
-    parameter type acc_mmu_resp_t = logic
+    parameter type x_result_t = logic
 ) (
     // Subsystem Clock - SUBSYSTEM
     input logic clk_i,
@@ -47,8 +46,6 @@ module ex_stage
     input logic [CVA6Cfg.NrIssuePorts-1:0][CVA6Cfg.VLEN-1:0] rs2_forwarding_i,
     // FU data useful to execute instruction - ISSUE_STAGE
     input fu_data_t [CVA6Cfg.NrIssuePorts-1:0] fu_data_i,
-    // ALU to ALU bypass control - ISSUE_STAGE
-    input alu_bypass_t alu_bypass_i,
     // PC of the current instruction - ISSUE_STAGE
     input logic [CVA6Cfg.VLEN-1:0] pc_i,
     // Is_zcmt instruction - ISSUE_STAGE
@@ -69,8 +66,6 @@ module ex_stage
     output logic flu_valid_o,
     // ALU instruction is valid - ISSUE_STAGE
     input logic [CVA6Cfg.NrIssuePorts-1:0] alu_valid_i,
-    // AES instruction is valid - ISSUE_STAGE
-    input logic [CVA6Cfg.NrIssuePorts-1:0] aes_valid_i,
     // Branch unit instruction is valid - ISSUE_STAGE
     input logic [CVA6Cfg.NrIssuePorts-1:0] branch_valid_i,
     // Information of branch prediction - ISSUE_STAGE
@@ -139,8 +134,6 @@ module ex_stage
     output logic fpu_valid_o,
     // FPU exception - ISSUE_STAGE
     output exception_t fpu_exception_o,
-    // FPU early valid - ISSUE_STAGE
-    output logic fpu_early_valid_o,
     // ALU2 instruction is valid - ISSUE_STAGE
     input logic [CVA6Cfg.NrIssuePorts-1:0] alu2_valid_i,
     // CVXIF instruction is valid - ISSUE_STAGE
@@ -169,9 +162,6 @@ module ex_stage
     input logic x_transaction_rejected_i,
     // accelerate port result is valid - ACC_DISPATCHER
     input logic acc_valid_i,
-    // Accelerator MMU access
-    input acc_mmu_req_t acc_mmu_req_i,
-    output acc_mmu_resp_t acc_mmu_resp_o,
     // Enable virtual memory translation - CSR_REGFILE
     input logic enable_translation_i,
     // Enable G-Stage memory translation - CSR_REGFILE
@@ -218,7 +208,7 @@ module ex_stage
     input icache_arsp_t icache_areq_i,
     // icache translation request - CACHE
     output icache_areq_t icache_areq_o,
-    // Data cache request output - CACHE
+    // Data cache request ouput - CACHE
     input dcache_req_o_t [2:0] dcache_req_ports_i,
     // Data cache request input - CACHE
     output dcache_req_i_t [2:0] dcache_req_ports_o,
@@ -235,15 +225,18 @@ module ex_stage
     // To count the data TLB misses - PERF_COUNTERS
     output logic dtlb_miss_o,
     // Report the PMP configuration - CSR_REGFILE
-    input riscv::pmpcfg_t [avoid_neg(CVA6Cfg.NrPMPEntries-1):0] pmpcfg_i,
+    input riscv::pmpcfg_t [(CVA6Cfg.NrPMPEntries > 0 ? CVA6Cfg.NrPMPEntries-1 : 0):0] pmpcfg_i,
     // Report the PMP addresses - CSR_REGFILE
-    input logic [avoid_neg(CVA6Cfg.NrPMPEntries-1):0][CVA6Cfg.PLEN-3:0] pmpaddr_i,
+    input logic [(CVA6Cfg.NrPMPEntries > 0 ? CVA6Cfg.NrPMPEntries-1 : 0):0][CVA6Cfg.PLEN-3:0] pmpaddr_i,
     // Information dedicated to RVFI - RVFI
     output lsu_ctrl_t rvfi_lsu_ctrl_o,
     // Information dedicated to RVFI - RVFI
     output [CVA6Cfg.PLEN-1:0] rvfi_mem_paddr_o,
-    // Original instruction AES bits
-    input logic [5:0] orig_instr_aes_i
+
+    /*Mohammad :] SEEE-PARV Ports [:*/
+    input ascon_outputs_t ascon_outputs,
+    input config_pkg::exception_t exception_o
+
 );
 
   // -------------------------
@@ -279,17 +272,14 @@ module ex_stage
 
   // from ALU to branch unit
   logic alu_branch_res;  // branch comparison result
-  logic [CVA6Cfg.NrALUs-1:0][CVA6Cfg.XLEN-1:0] alu_result;
-  logic [CVA6Cfg.XLEN-1:0] csr_result, mult_result, aes_result;
+  logic [CVA6Cfg.XLEN-1:0] alu_result, csr_result, mult_result;
   logic [CVA6Cfg.VLEN-1:0] branch_result;
   logic csr_ready, mult_ready;
   logic [CVA6Cfg.TRANS_ID_BITS-1:0] mult_trans_id;
   logic mult_valid;
 
-  fu_data_t [CVA6Cfg.NrALUs-1:0] alu_data;
-
   logic [CVA6Cfg.NrIssuePorts-1:0] one_cycle_select;
-  assign one_cycle_select = alu_valid_i | branch_valid_i | csr_valid_i | aes_valid_i;
+  assign one_cycle_select = alu_valid_i | branch_valid_i | csr_valid_i;
 
   fu_data_t one_cycle_data;
   logic [CVA6Cfg.VLEN-1:0] rs1_forwarding;
@@ -309,27 +299,15 @@ module ex_stage
     end
   end
 
-  // 1. ALU(s) (combinatorial)
-  assign alu_data[0] = one_cycle_data;
-
-  if (CVA6Cfg.SuperscalarEn) begin : gen_alu2_data_sel
-    always_comb begin
-      unique case (1'b1)
-        alu2_valid_i[1]: alu_data[1] = fu_data_i[1];
-        alu2_valid_i[0]: alu_data[1] = fu_data_i[0];
-        default: alu_data[1] = '0;
-      endcase
-    end
-  end
-
-  alu_wrapper #(
+  // 1. ALU (combinatorial)
+  alu #(
       .CVA6Cfg  (CVA6Cfg),
+      .HasBranch(1'b1),
       .fu_data_t(fu_data_t)
-  ) alu_wrapper_i (
+  ) alu_i (
       .clk_i,
       .rst_ni,
-      .alu_bypass_i    (alu_bypass_i),
-      .fu_data_i       (alu_data),
+      .fu_data_i       (one_cycle_data),
       .result_o        (alu_result),
       .alu_branch_res_o(alu_branch_res)
   );
@@ -386,15 +364,13 @@ module ex_stage
     flu_trans_id_o = one_cycle_data.trans_id;
     // ALU result
     if (|alu_valid_i) begin
-      flu_result_o = alu_result[0];
+      flu_result_o = alu_result;
       // CSR result
     end else if (|csr_valid_i) begin
       flu_result_o = csr_result;
     end else if (mult_valid) begin
       flu_result_o   = mult_result;
       flu_trans_id_o = mult_trans_id;
-    end else if (|aes_valid_i) begin
-      flu_result_o = aes_result;
     end
   end
 
@@ -436,6 +412,8 @@ module ex_stage
   logic fpu_valid;
   logic [CVA6Cfg.TRANS_ID_BITS-1:0] fpu_trans_id;
   logic [CVA6Cfg.XLEN-1:0] fpu_result;
+  logic alu2_valid;
+  logic [CVA6Cfg.XLEN-1:0] alu2_result;
 
   generate
     if (CVA6Cfg.FpPresent) begin : fpu_gen
@@ -467,30 +445,56 @@ module ex_stage
           .fpu_trans_id_o(fpu_trans_id),
           .result_o(fpu_result),
           .fpu_valid_o(fpu_valid),
-          .fpu_exception_o,
-          .fpu_early_valid_o
+          .fpu_exception_o
       );
     end else begin : no_fpu_gen
-      assign fpu_ready_o       = '0;
-      assign fpu_trans_id      = '0;
-      assign fpu_result        = '0;
-      assign fpu_valid         = '0;
-      assign fpu_exception_o   = '0;
-      assign fpu_early_valid_o = '0;
+      assign fpu_ready_o     = '0;
+      assign fpu_trans_id    = '0;
+      assign fpu_result      = '0;
+      assign fpu_valid       = '0;
+      assign fpu_exception_o = '0;
     end
   endgenerate
+
+  // ----------------
+  // ALU2
+  // ----------------
+  fu_data_t alu2_data;
+  if (CVA6Cfg.SuperscalarEn) begin : alu2_gen
+    always_comb begin
+      alu2_data = alu2_valid_i[0] ? fu_data_i[0] : '0;
+      if (alu2_valid_i[1]) begin
+        alu2_data = fu_data_i[1];
+      end
+    end
+
+    alu #(
+        .CVA6Cfg  (CVA6Cfg),
+        .HasBranch(1'b0),
+        .fu_data_t(fu_data_t)
+    ) alu2_i (
+        .clk_i,
+        .rst_ni,
+        .fu_data_i       (alu2_data),
+        .result_o        (alu2_result),
+        .alu_branch_res_o(  /* this ALU does not handle branching */)
+    );
+  end else begin
+    assign alu2_data   = '0;
+    assign alu2_result = '0;
+  end
 
   // result MUX
   // This is really explicit so that synthesis tools can elide unused signals
   if (CVA6Cfg.SuperscalarEn) begin
     if (CVA6Cfg.FpPresent) begin
       assign fpu_valid_o    = fpu_valid || |alu2_valid_i;
-      assign fpu_result_o   = fpu_valid ? fpu_result   : alu_result[1];
-      assign fpu_trans_id_o = fpu_valid ? fpu_trans_id : alu_data[1].trans_id;
+      assign fpu_result_o   = fpu_valid ? fpu_result   : alu2_result;
+      assign fpu_trans_id_o = fpu_valid ? fpu_trans_id : alu2_data.trans_id;
     end else begin
       assign fpu_valid_o    = |alu2_valid_i;
-      assign fpu_result_o   = alu_result[1];
-      assign fpu_trans_id_o = alu_data[1].trans_id;
+      assign fpu_result_o   = alu2_result;
+      assign fpu_trans_id_o = alu2_data.trans_id;
     end
   end else begin
     if (CVA6Cfg.FpPresent) begin
@@ -522,6 +526,7 @@ module ex_stage
   end
 
   load_store_unit #(
+    .ascon_outputs_t(ascon_outputs_t),
       .CVA6Cfg   (CVA6Cfg),
       .dcache_req_i_t(dcache_req_i_t),
       .dcache_req_o_t(dcache_req_o_t),
@@ -531,18 +536,20 @@ module ex_stage
       .icache_arsp_t(icache_arsp_t),
       .icache_dreq_t(icache_dreq_t),
       .icache_drsp_t(icache_drsp_t),
-      .lsu_ctrl_t(lsu_ctrl_t),
-      .acc_mmu_req_t(acc_mmu_req_t),
-      .acc_mmu_resp_t(acc_mmu_resp_t)
+      
+      .lsu_ctrl_t(lsu_ctrl_t)
   ) lsu_i (
       .clk_i,
       .rst_ni,
       .flush_i,
+      .exception_o(exception_o),
+      .ascon_outputs(ascon_outputs),
       .stall_st_pending_i,
       .no_st_pending_o,
       .fu_data_i             (lsu_data),
       .lsu_ready_o,
       .lsu_valid_i           (|lsu_valid_i),
+      .scs_base_address(rs1_forwarding_i+rs2_forwarding_i),
       .load_trans_id_o,
       .load_result_o,
       .load_valid_o,
@@ -558,8 +565,6 @@ module ex_stage
       .enable_g_translation_i,
       .en_ld_st_translation_i,
       .en_ld_st_g_translation_i,
-      .acc_mmu_req_i,
-      .acc_mmu_resp_o,
       .icache_areq_i,
       .icache_areq_o,
       .priv_lvl_i,
@@ -618,7 +623,6 @@ module ex_stage
     ) cvxif_fu_i (
         .clk_i,
         .rst_ni,
-        .v_i,
         .x_valid_i(|x_valid_i),
         .x_trans_id_i(cvxif_data.trans_id),
         .x_illegal_i(x_transaction_rejected_i),
@@ -640,8 +644,6 @@ module ex_stage
     assign x_exception_o    = '0;
     assign x_result_o       = '0;
     assign x_valid_o        = '0;
-    assign x_we_o           = '0;
-    assign x_rd_o           = '0;
   end
 
   if (CVA6Cfg.RVS) begin
@@ -721,25 +723,5 @@ module ex_stage
     assign vmid_to_be_flushed                 = '0;
     assign gpaddr_to_be_flushed               = '0;
   end
-
-  // ----------------
-  // Scalar Cryptography Unit
-  // ----------------
-  generate
-    if (CVA6Cfg.ZKN) begin : aes_gen
-      aes #(
-          .CVA6Cfg  (CVA6Cfg),
-          .fu_data_t(fu_data_t)
-      ) aes_i (
-          .clk_i,
-          .rst_ni,
-          .fu_data_i     (one_cycle_data),
-          .result_o      (aes_result),
-          .orig_instr_aes(orig_instr_aes_i)
-      );
-    end else begin : no_aes_gen
-      assign aes_result = '0;
-    end
-  endgenerate
 
 endmodule

@@ -17,6 +17,7 @@
 module store_buffer
   import ariane_pkg::*;
 #(
+    parameter type ascon_outputs_t = logic,
     parameter config_pkg::cva6_cfg_t CVA6Cfg = config_pkg::cva6_cfg_empty,
     parameter type dcache_req_i_t = logic,
     parameter type dcache_req_o_t = logic
@@ -48,7 +49,12 @@ module store_buffer
 
     // D$ interface
     input  dcache_req_o_t req_port_i,
-    output dcache_req_i_t req_port_o
+    output dcache_req_i_t req_port_o,
+
+        /*Mohammad :] SEEE-PARV Ports [:*/
+    input ascon_outputs_t ascon_outputs,
+    input config_pkg::exception_t exception_o,
+    input logic [CVA6Cfg.NrIssuePorts-1:0][CVA6Cfg.VLEN-1:0] scs_base_address
 );
 
   // the store queue has two parts:
@@ -90,7 +96,7 @@ module store_buffer
     speculative_queue_n         = speculative_queue_q;
     // LSU interface
     // we are ready to accept a new entry and the input data is valid
-    if (valid_i) begin
+    if (valid_i && !exception_o.normal_store_secure_variable) begin
       speculative_queue_n[speculative_write_pointer_q].address = paddr_i;
       speculative_queue_n[speculative_write_pointer_q].data = data_i;
       speculative_queue_n[speculative_write_pointer_q].be = be_i;
@@ -103,7 +109,7 @@ module store_buffer
 
     // evict the current entry out of this queue, the commit queue will thankfully take it and commit it
     // to the memory hierarchy
-    if (commit_i) begin
+    if (commit_i && !exception_o.normal_store_secure_variable) begin
       // invalidate
       speculative_queue_n[speculative_read_pointer_q].valid = 1'b0;
       // advance the read pointer
@@ -152,41 +158,136 @@ module store_buffer
 
   assign rvfi_mem_paddr_o = speculative_queue_q[speculative_read_pointer_q].address;
 
+
+
+  // -------------------------------------------------
+  // Secure Store FSM
+  // -------------------------------------------------
+  typedef enum logic [1:0] {
+    SCS_IDLE,
+    SCS_WAIT_NONCE,
+    SCS_WAIT_CIPHER_TAG,
+    SCS_DONE
+  } scs_state_t;
+
+    scs_state_t scs_state_q, scs_state_d;
+    logic [63:0] scs_base_address_holder_q, scs_base_address_holder_d;
+
   always_comb begin : store_if
     automatic logic [$clog2(DEPTH_COMMIT):0] commit_status_cnt;
     commit_status_cnt      = commit_status_cnt_q;
 
+    // Default assignments for all combinational next signals
     commit_ready_o         = (commit_status_cnt_q < DEPTH_COMMIT);
-    // no store is pending if we don't have any element in the commit queue e.g.: it is empty
     no_st_pending_o        = (commit_status_cnt_q == 0);
-    // default assignments
     commit_read_pointer_n  = commit_read_pointer_q;
     commit_write_pointer_n = commit_write_pointer_q;
-
     commit_queue_n         = commit_queue_q;
-
     req_port_o.data_req    = 1'b0;
+    scs_state_d            = scs_state_q;
+    scs_base_address_holder_d = scs_base_address_holder_q;  // hold by default
 
-    // there should be no commit when we are flushing
-    // if the entry in the commit queue is valid and not speculative anymore we can issue this instruction
+    // Issue request from commit queue head
     if (commit_queue_q[commit_read_pointer_q].valid && !stall_st_pending_i) begin
       req_port_o.data_req = 1'b1;
       if (req_port_i.data_gnt) begin
-        // we can evict it from the commit buffer
         commit_queue_n[commit_read_pointer_q].valid = 1'b0;
-        // advance the read_pointer
         commit_read_pointer_n = commit_read_pointer_q + 1'b1;
         commit_status_cnt--;
       end
     end
-    // we ignore the rvalid signal for now as we assume that the store
-    // happened if we got a grant
 
-    // shift the store request from the speculative buffer to the non-speculative
-    if (commit_i) begin
+    // Normal commit from speculative to commit queue
+    if (commit_i && !exception_o.normal_store_secure_variable ) begin
       commit_queue_n[commit_write_pointer_q] = speculative_queue_q[speculative_read_pointer_q];
       commit_write_pointer_n = commit_write_pointer_n + 1'b1;
       commit_status_cnt++;
+    end
+
+    // Secure Ascon Stores (only if no exception)
+    if (!exception_o.normal_store_secure_variable) begin
+      case (scs_state_q)
+        SCS_IDLE: begin
+          
+          if (ascon_outputs.encrpt_en) begin
+            scs_base_address_holder_d = scs_base_address[0];  // update ONLY here
+            scs_state_d = SCS_WAIT_NONCE;
+          end else if (ascon_outputs.encrypting == 1 && ascon_outputs.store_buffer_ready) begin
+            // do NOT update base address here — it was already captured on encrpt_en
+            scs_state_d = SCS_WAIT_CIPHER_TAG;
+          end else begin
+            scs_state_d = SCS_IDLE;
+          end
+        end
+
+        SCS_WAIT_NONCE: begin
+          if (commit_status_cnt <= DEPTH_COMMIT - 2) begin
+            // Lower 64 bits of nonce (as 32-bit write)
+            commit_queue_n[commit_write_pointer_n].address   = scs_base_address_holder_q + 24;
+            commit_queue_n[commit_write_pointer_n].data      = {32'h0, ascon_outputs.trng_enc_nonce[63:0]};
+            commit_queue_n[commit_write_pointer_n].be        = 8'hFF;
+            commit_queue_n[commit_write_pointer_n].data_size = 2'b11;
+            commit_queue_n[commit_write_pointer_n].valid     = 1'b1;
+            commit_write_pointer_n = commit_write_pointer_n + 1'b1;
+            commit_status_cnt++;
+
+            // Upper 64 bits of nonce (as 32-bit write)
+            commit_queue_n[commit_write_pointer_n].address   = scs_base_address_holder_q + 32;
+            commit_queue_n[commit_write_pointer_n].data      = {32'h0, ascon_outputs.trng_enc_nonce[127:64]};
+            commit_queue_n[commit_write_pointer_n].be        = 8'hFF;
+            commit_queue_n[commit_write_pointer_n].data_size = 2'b11;
+            commit_queue_n[commit_write_pointer_n].valid     = 1'b1;
+            commit_write_pointer_n = commit_write_pointer_n + 1'b1;
+            commit_status_cnt++;
+
+            scs_state_d = SCS_DONE;
+          end else begin
+            scs_state_d = SCS_WAIT_NONCE;  // stay until space available
+          end
+        end
+
+        SCS_WAIT_CIPHER_TAG: begin
+          if (commit_status_cnt <= DEPTH_COMMIT - 3) begin
+            // Ciphertext lower 64 bits
+            commit_queue_n[commit_write_pointer_n].address   = scs_base_address_holder_q + 0;
+            commit_queue_n[commit_write_pointer_n].data      = ascon_outputs.enc_dec_message;
+            commit_queue_n[commit_write_pointer_n].be        = 8'hFF;
+            commit_queue_n[commit_write_pointer_n].data_size = 2'b11;
+            commit_queue_n[commit_write_pointer_n].valid     = 1'b1;
+            commit_write_pointer_n = commit_write_pointer_n + 1'b1;
+            commit_status_cnt++;
+
+            // Ciphertext upper 64 bits
+            commit_queue_n[commit_write_pointer_n].address   = scs_base_address_holder_q + 8;
+            commit_queue_n[commit_write_pointer_n].data      = ascon_outputs.enc_tag_value[63:0];
+            commit_queue_n[commit_write_pointer_n].be        = 8'hFF;
+            commit_queue_n[commit_write_pointer_n].data_size = 2'b11;
+            commit_queue_n[commit_write_pointer_n].valid     = 1'b1;
+            commit_write_pointer_n = commit_write_pointer_n + 1'b1;
+            commit_status_cnt++;
+
+            // Tag upper 64 bits (as 32-bit write)
+            commit_queue_n[commit_write_pointer_n].address   = scs_base_address_holder_q + 16;
+            commit_queue_n[commit_write_pointer_n].data      = {32'h0, ascon_outputs.enc_tag_value[127:64]};
+            commit_queue_n[commit_write_pointer_n].be        = 8'hFF;
+            commit_queue_n[commit_write_pointer_n].data_size = 2'b11;
+            commit_queue_n[commit_write_pointer_n].valid     = 1'b1;
+            commit_write_pointer_n = commit_write_pointer_n + 1'b1;
+            commit_status_cnt++;
+
+            scs_state_d = SCS_DONE;
+          end else begin
+            scs_state_d = SCS_WAIT_CIPHER_TAG;  // stay until space available
+          end
+        end
+
+        SCS_DONE: begin
+          scs_state_d = SCS_IDLE;
+        end
+      endcase
+    end else begin
+      // When exception_o.normal_store_secure_variable is set, go/stay in IDLE
+      scs_state_d = SCS_IDLE;
     end
 
     commit_status_cnt_n = commit_status_cnt;
@@ -195,24 +296,10 @@ module store_buffer
   // ------------------
   // Address Checker
   // ------------------
-  // The load should return the data stored by the most recent store to the
-  // same physical address.  The most direct way to implement this is to
-  // maintain physical addresses in the store buffer.
-
-  // Of course, there are other micro-architectural techniques to accomplish
-  // the same thing: you can interlock and wait for the store buffer to
-  // drain if the load VA matches any store VA modulo the page size (i.e.
-  // bits 11:0).  As a special case, it is correct to bypass if the full VA
-  // matches, and no younger stores' VAs match in bits 11:0.
-  //
-  // checks if the requested load is in the store buffer
-  // page offsets are virtually and physically the same
   always_comb begin : address_checker
     page_offset_matches_o = 1'b0;
 
-    // check if the LSBs are identical and the entry is valid
     for (int unsigned i = 0; i < DEPTH_COMMIT; i++) begin
-      // Check if the page offset matches and whether the entry is valid, for the commit queue
       if ((page_offset_i[11:3] == commit_queue_q[i].address[11:3]) && commit_queue_q[i].valid) begin
         page_offset_matches_o = 1'b1;
         break;
@@ -220,13 +307,12 @@ module store_buffer
     end
 
     for (int unsigned i = 0; i < DEPTH_SPEC; i++) begin
-      // do the same for the speculative queue
       if ((page_offset_i[11:3] == speculative_queue_q[i].address[11:3]) && speculative_queue_q[i].valid) begin
         page_offset_matches_o = 1'b1;
         break;
       end
     end
-    // or it matches with the entry we are currently putting into the queue
+
     if ((page_offset_i[11:3] == paddr_i[11:3]) && valid_without_flush_i) begin
       page_offset_matches_o = 1'b1;
     end
@@ -240,11 +326,16 @@ module store_buffer
       speculative_read_pointer_q  <= '0;
       speculative_write_pointer_q <= '0;
       speculative_status_cnt_q    <= '0;
+      scs_state_q                 <= SCS_IDLE;
+      scs_base_address_holder_q   <= '0;
     end else begin
       speculative_queue_q         <= speculative_queue_n;
       speculative_read_pointer_q  <= speculative_read_pointer_n;
       speculative_write_pointer_q <= speculative_write_pointer_n;
       speculative_status_cnt_q    <= speculative_status_cnt_n;
+
+      scs_state_q                 <= scs_state_d;
+      scs_base_address_holder_q   <= scs_base_address_holder_d;
     end
   end
 
@@ -268,8 +359,6 @@ module store_buffer
   ///////////////////////////////////////////////////////
 
   //pragma translate_off
-  // assert that commit is never set when we are flushing this would be counter intuitive
-  // as flush and commit is decided in the same stage
   commit_and_flush :
   assert property (@(posedge clk_i) rst_ni && flush_i |-> !commit_i)
   else $error("[Commit Queue] You are trying to commit and flush in the same cycle");
@@ -288,6 +377,3 @@ module store_buffer
   else $error("[Commit Queue] You are trying to commit a store although the buffer is full");
   //pragma translate_on
 endmodule
-
-
-
